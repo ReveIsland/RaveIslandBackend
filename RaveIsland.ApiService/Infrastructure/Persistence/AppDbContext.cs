@@ -8,8 +8,7 @@ namespace RaveIsland.ApiService.Infrastructure.Persistence;
 
 public class AppDbContext(
     DbContextOptions<AppDbContext> options,
-    IHttpContextAccessor httpContextAccessor,
-    IServiceScopeFactory scopeFactory) : DbContext(options)
+    IHttpContextAccessor httpContextAccessor) : DbContext(options)
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<TenantMembership> TenantMemberships => Set<TenantMembership>();
@@ -31,7 +30,7 @@ public class AppDbContext(
     }
 
     private Guid? CurrentTenantId =>
-        TenantIdResolutionHelper.Resolve(httpContextAccessor, scopeFactory);
+        TenantIdResolutionHelper.Resolve(httpContextAccessor);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

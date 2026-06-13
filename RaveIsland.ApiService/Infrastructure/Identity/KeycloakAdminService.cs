@@ -19,6 +19,12 @@ public interface IKeycloakAdminService
     Task SetUserEnabledAsync(string keycloakUserId, bool enabled, CancellationToken cancellationToken = default);
 
     Task UpdateUserRoleAsync(string keycloakUserId, string newRole, CancellationToken cancellationToken = default);
+
+    Task<string?> GetUserIdByEmailAsync(string email, CancellationToken cancellationToken = default);
+
+    Task SetTenantAttributeAsync(string keycloakUserId, Guid tenantId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlySet<string>> GetPlatformAdminUserIdsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class KeycloakAdminService(
@@ -119,6 +125,72 @@ public sealed class KeycloakAdminService(
         }
 
         await AssignRealmRoleAsync(http, keycloakBase, token, keycloakUserId, newRole, cancellationToken);
+    }
+
+    public async Task<string?> GetUserIdByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        var users = await GetUsersByEmailAsync(http, keycloakBase, token, email.Trim(), cancellationToken);
+        return users.FirstOrDefault()?.Id;
+    }
+
+    public async Task SetTenantAttributeAsync(
+        string keycloakUserId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"{keycloakBase}/admin/realms/{Realm}/users/{keycloakUserId}")
+        {
+            Content = JsonContent.Create(new
+            {
+                attributes = new Dictionary<string, string[]>
+                {
+                    ["tenant_id"] = [tenantId.ToString()],
+                },
+            }),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            logger.LogWarning(
+                "Failed to set tenant_id attribute for user {UserId}: {Status} {Body}",
+                keycloakUserId,
+                (int)response.StatusCode,
+                body);
+            return;
+        }
+
+        logger.LogInformation("Set tenant_id attribute for Keycloak user {UserId}", keycloakUserId);
+    }
+
+    public async Task<IReadOnlySet<string>> GetPlatformAdminUserIdsAsync(CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{keycloakBase}/admin/realms/{Realm}/roles/{Common.AppRoles.Admin}/users?max=1000");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var users = await SendAsync<UserRepresentation[]>(http, request, cancellationToken) ?? [];
+        return users
+            .Where(u => !string.IsNullOrWhiteSpace(u.Id))
+            .Select(u => u.Id!)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private async Task<string> GetAdminTokenAsync(CancellationToken cancellationToken)

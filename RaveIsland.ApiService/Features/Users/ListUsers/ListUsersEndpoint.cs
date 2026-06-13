@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using RaveIsland.ApiService.Common;
+using RaveIsland.ApiService.Infrastructure.Identity;
 using RaveIsland.ApiService.Infrastructure.Persistence;
 using RaveIsland.ApiService.Infrastructure.Persistence.Entities;
 using RaveIsland.ApiService.Infrastructure.Tenancy;
@@ -14,13 +15,20 @@ public sealed class ListUsersEndpoint : IEndpoint
     private static async Task<IResult> Handle(
         AppDbContext db,
         ITenantContext tenantContext,
+        ITenantMembershipResolver tenantMembershipResolver,
+        IKeycloakAdminService keycloakAdmin,
         Guid? tenantId,
         CancellationToken cancellationToken)
     {
-        var effectiveTenantId = tenantContext.IsAdmin ? tenantId : tenantContext.TenantId;
+        var effectiveTenantId = tenantContext.IsAdmin
+            ? tenantId
+            : tenantContext.TenantId ?? await tenantMembershipResolver.ResolveTenantIdAsync(cancellationToken);
+
         if (!tenantContext.IsAdmin && !effectiveTenantId.HasValue)
         {
-            return Results.Forbid();
+            return Results.Json(
+                new { error = "Tenant context could not be resolved for this user." },
+                statusCode: StatusCodes.Status403Forbidden);
         }
 
         var membershipsQuery = db.TenantMemberships
@@ -32,6 +40,12 @@ public sealed class ListUsersEndpoint : IEndpoint
         if (effectiveTenantId.HasValue)
         {
             membershipsQuery = membershipsQuery.Where(m => m.TenantId == effectiveTenantId.Value);
+        }
+
+        if (!tenantContext.IsAdmin)
+        {
+            membershipsQuery = membershipsQuery.Where(m =>
+                m.Role == AppRoles.TenantAdmin || m.Role == AppRoles.TenantUser);
         }
 
         var memberships = await membershipsQuery
@@ -50,6 +64,14 @@ public sealed class ListUsersEndpoint : IEndpoint
                 m.CreatedAt,
             })
             .ToListAsync(cancellationToken);
+
+        if (!tenantContext.IsAdmin)
+        {
+            var platformAdminIds = await keycloakAdmin.GetPlatformAdminUserIdsAsync(cancellationToken);
+            memberships = memberships
+                .Where(m => !platformAdminIds.Contains(m.keycloakUserId))
+                .ToList();
+        }
 
         var invitationsQuery = db.UserInvitations
             .IgnoreQueryFilters()

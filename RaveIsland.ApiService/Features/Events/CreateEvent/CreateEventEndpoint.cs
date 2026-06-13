@@ -48,10 +48,12 @@ public sealed class CreateEventEndpoint : IEndpoint
             }
         }
 
-        var userId = tenantContext.UserId ?? user.FindFirst("sub")?.Value;
+        var userId = KeycloakClaims.GetUserId(user);
         if (string.IsNullOrWhiteSpace(userId))
         {
-            return Results.Unauthorized();
+            return Results.Json(
+                new { error = "User identity could not be resolved from the access token." },
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         var now = DateTimeOffset.UtcNow;

@@ -33,6 +33,15 @@ public sealed class UpdateUserEndpoint : IEndpoint
             return Results.Forbid();
         }
 
+        if (!tenantContext.IsAdmin)
+        {
+            var platformAdminIds = await keycloakAdmin.GetPlatformAdminUserIdsAsync(cancellationToken);
+            if (platformAdminIds.Contains(membership.KeycloakUserId))
+            {
+                return Results.Forbid();
+            }
+        }
+
         if (tenantContext.IsTenantAdmin && !tenantContext.IsAdmin &&
             string.Equals(membership.Role, AppRoles.TenantAdmin, StringComparison.OrdinalIgnoreCase))
         {

@@ -8,6 +8,7 @@ import { RaveAuthProvider } from "./auth/RaveAuthProvider";
 import { AdminPage } from "./pages/AdminPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
+import { EventFormPage } from "./pages/EventFormPage";
 import { InviteAcceptPage } from "./pages/InviteAcceptPage";
 import { LandingPage } from "./pages/LandingPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
@@ -34,6 +35,8 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/profile" element={<ProfileSettingsPage />} />
                 <Route path="/events" element={<EventsPage />} />
+                <Route path="/events/new" element={<EventFormPage />} />
+                <Route path="/events/:eventId/edit" element={<EventFormPage />} />
                 <Route element={<RoleRoute anyOf={["admin"]} />}>
                   <Route path="/admin" element={<AdminPage />} />
                   <Route path="/admin/tenants" element={<TenantsPage />} />

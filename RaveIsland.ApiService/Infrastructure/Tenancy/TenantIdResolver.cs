@@ -1,8 +1,7 @@
 namespace RaveIsland.ApiService.Infrastructure.Tenancy;
 
-public sealed class TenantIdResolver(IHttpContextAccessor httpContextAccessor, IServiceScopeFactory scopeFactory)
-    : ITenantIdResolver
+public sealed class TenantIdResolver(IHttpContextAccessor httpContextAccessor) : ITenantIdResolver
 {
     public Guid? GetTenantId() =>
-        TenantIdResolutionHelper.Resolve(httpContextAccessor, scopeFactory);
+        TenantIdResolutionHelper.Resolve(httpContextAccessor);
 }

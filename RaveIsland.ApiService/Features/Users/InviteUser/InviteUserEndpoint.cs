@@ -18,6 +18,7 @@ public sealed class InviteUserEndpoint : IEndpoint
         InviteUserRequest request,
         AppDbContext db,
         ITenantContext tenantContext,
+        ITenantMembershipResolver tenantMembershipResolver,
         IEmailSender emailSender,
         IOptions<AppOptions> appOptions,
         CancellationToken cancellationToken)
@@ -35,10 +36,12 @@ public sealed class InviteUserEndpoint : IEndpoint
             return Results.BadRequest(new { error = "Role must be tenant-admin or tenant-user." });
         }
 
-        var tenantId = ResolveTenantId(request.TenantId, tenantContext);
+        var tenantId = tenantContext.IsAdmin
+            ? request.TenantId
+            : tenantContext.TenantId ?? await tenantMembershipResolver.ResolveTenantIdAsync(cancellationToken);
         if (!tenantId.HasValue)
         {
-            return Results.BadRequest(new { error = "TenantId is required for platform admins." });
+            return Results.BadRequest(new { error = "Tenant context could not be resolved for this user." });
         }
 
         if (tenantContext.IsTenantAdmin && !tenantContext.IsAdmin &&
@@ -124,16 +127,6 @@ public sealed class InviteUserEndpoint : IEndpoint
             invitation.Status,
             invitation.ExpiresAt,
         });
-    }
-
-    private static Guid? ResolveTenantId(Guid? requestedTenantId, ITenantContext tenantContext)
-    {
-        if (tenantContext.IsAdmin)
-        {
-            return requestedTenantId;
-        }
-
-        return tenantContext.TenantId;
     }
 
     public sealed record InviteUserRequest(

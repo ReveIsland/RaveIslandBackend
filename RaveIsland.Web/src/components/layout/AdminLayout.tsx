@@ -52,17 +52,26 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/profile": "Profile settings",
   "/events": "Events",
+  "/events/new": "Create event",
   "/admin": "Analytics",
   "/admin/tenants": "Tenants",
   "/admin/users": "User management",
 };
+
+function resolvePageTitle(pathname: string): string {
+  if (pathname.endsWith("/edit") && pathname.startsWith("/events/")) {
+    return "Edit event";
+  }
+
+  return pageTitles[pathname] ?? "Admin Panel";
+}
 
 function AdminLayoutShell() {
   const { profile } = useCurrentUser();
   const location = useLocation();
   const roles = profile?.roles ?? [];
   const displayName = profile?.name ?? "User";
-  const pageTitle = pageTitles[location.pathname] ?? "Admin Panel";
+  const pageTitle = resolvePageTitle(location.pathname);
 
   const visibleNavItems = navItems.filter((item) => !item.visible || item.visible(roles));
 

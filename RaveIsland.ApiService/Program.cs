@@ -24,6 +24,7 @@ builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptio
 
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<ITenantIdResolver, TenantIdResolver>();
+builder.Services.AddScoped<ITenantMembershipResolver, TenantMembershipResolver>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IKeycloakAdminService, KeycloakAdminService>();
 
@@ -54,21 +55,28 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.Events = new JwtBearerEvents
         {
-            OnTokenValidated = context =>
+            OnTokenValidated = async context =>
             {
                 var azp = context.Principal?.FindFirst("azp")?.Value;
                 if (!string.Equals(azp, "raveisland-web", StringComparison.Ordinal))
                 {
                     context.Fail("Access token was not issued for the raveisland-web client.");
-                    return Task.CompletedTask;
+                    return;
                 }
 
                 if (context.Principal is not null)
                 {
                     KeycloakClaims.MapRealmRoles(context.Principal);
-                }
 
-                return Task.CompletedTask;
+                    var configuration = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+                    var environment = context.HttpContext.RequestServices.GetRequiredService<IHostEnvironment>();
+                    await KeycloakClaims.EnrichPrincipalFromUserInfoAsync(
+                        context.Principal,
+                        context.HttpContext,
+                        configuration,
+                        environment,
+                        context.HttpContext.RequestAborted);
+                }
             },
         };
     });
@@ -76,21 +84,27 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthorizationPolicies.AdminOnly, policy =>
-        policy.RequireRole(AppRoles.Admin));
+        policy.RequireAssertion(context =>
+            AuthorizationRoleHelper.HasAnyRole(context.User, AppRoles.Admin)));
 
     options.AddPolicy(AuthorizationPolicies.TenantAdminOnly, policy =>
-        policy.RequireRole(AppRoles.TenantAdmin));
+        policy.RequireAssertion(context =>
+            AuthorizationRoleHelper.HasAnyRole(context.User, AppRoles.TenantAdmin)));
 
     options.AddPolicy(AuthorizationPolicies.TenantMember, policy =>
         policy.RequireAssertion(context =>
-            context.User.IsInRole(AppRoles.Admin) ||
-            context.User.IsInRole(AppRoles.TenantAdmin) ||
-            context.User.IsInRole(AppRoles.TenantUser)));
+            AuthorizationRoleHelper.HasAnyRole(
+                context.User,
+                AppRoles.Admin,
+                AppRoles.TenantAdmin,
+                AppRoles.TenantUser)));
 
     options.AddPolicy(AuthorizationPolicies.TenantAdminOrAdmin, policy =>
         policy.RequireAssertion(context =>
-            context.User.IsInRole(AppRoles.Admin) ||
-            context.User.IsInRole(AppRoles.TenantAdmin)));
+            AuthorizationRoleHelper.HasAnyRole(
+                context.User,
+                AppRoles.Admin,
+                AppRoles.TenantAdmin)));
 });
 
 var app = builder.Build();
@@ -111,6 +125,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("WebDev");
 app.UseAuthentication();
+app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseAuthorization();
 
 app.MapGet("/", () => Results.Ok(new { message = "Rave Island API" }));

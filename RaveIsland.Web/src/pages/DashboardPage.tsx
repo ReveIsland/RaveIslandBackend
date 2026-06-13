@@ -135,14 +135,24 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {isTenantMember(roles) && (
-              <Link
-                to="/events"
-                className={cn(
-                  "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
-                )}
-              >
-                Manage events
-              </Link>
+              <>
+                <Link
+                  to="/events"
+                  className={cn(
+                    "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
+                  )}
+                >
+                  Manage events
+                </Link>
+                <Link
+                  to="/events/new"
+                  className={cn(
+                    "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
+                  )}
+                >
+                  Create event
+                </Link>
+              </>
             )}
             {(isPlatformAdmin(roles) || isTenantAdmin(roles)) && (
               <Link

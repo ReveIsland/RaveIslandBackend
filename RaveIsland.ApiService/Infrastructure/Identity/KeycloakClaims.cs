@@ -7,6 +7,7 @@ namespace RaveIsland.ApiService.Infrastructure.Identity;
 public sealed record UserProfile(string? Name, string? Email, IReadOnlyList<string> Roles);
 
 public sealed record KeycloakUserInfo(
+    string? Sub,
     string? Name,
     string? Email,
     IReadOnlyList<string> Roles,
@@ -79,10 +80,100 @@ public static class KeycloakClaims
 
         foreach (var role in ExtractRolesFromRealmAccess(principal))
         {
-            if (!principal.IsInRole(role))
+            if (!identity.HasClaim("roles", role))
             {
                 identity.AddClaim(new Claim("roles", role));
             }
+        }
+    }
+
+    public static async Task EnrichPrincipalFromUserInfoAsync(
+        ClaimsPrincipal principal,
+        HttpContext httpContext,
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        CancellationToken cancellationToken = default)
+    {
+        if (principal.Identity is not ClaimsIdentity identity)
+        {
+            return;
+        }
+
+        var roles = GetRoles(principal);
+        var needsRoles = !roles.Any(IsApplicationRole);
+        var needsEmail = string.IsNullOrWhiteSpace(GetEmail(principal));
+        var needsSub = string.IsNullOrWhiteSpace(GetUserId(principal));
+
+        if (!needsRoles && !needsEmail && !needsSub)
+        {
+            return;
+        }
+
+        var userInfo = await TryFetchUserInfoAsync(
+            httpContext,
+            configuration,
+            environment,
+            cancellationToken);
+
+        if (userInfo is null)
+        {
+            if (needsSub)
+            {
+                await TryAddSubjectFromEmailAsync(principal, identity, httpContext, cancellationToken);
+            }
+
+            return;
+        }
+
+        if (needsSub && !string.IsNullOrWhiteSpace(userInfo.Sub))
+        {
+            identity.AddClaim(new Claim("sub", userInfo.Sub));
+        }
+
+        if (needsRoles && userInfo.Roles is { Count: > 0 })
+        {
+            foreach (var role in userInfo.Roles.Where(IsMeaningfulRole))
+            {
+                if (!identity.HasClaim("roles", role))
+                {
+                    identity.AddClaim(new Claim("roles", role));
+                }
+            }
+        }
+
+        if (needsEmail && !string.IsNullOrWhiteSpace(userInfo.Email))
+        {
+            identity.AddClaim(new Claim("email", userInfo.Email));
+        }
+
+        if (needsSub && string.IsNullOrWhiteSpace(GetUserId(principal)))
+        {
+            await TryAddSubjectFromEmailAsync(principal, identity, httpContext, cancellationToken);
+        }
+    }
+
+    private static async Task TryAddSubjectFromEmailAsync(
+        ClaimsPrincipal principal,
+        ClaimsIdentity identity,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        var email = GetEmail(principal);
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return;
+        }
+
+        var keycloakAdmin = httpContext.RequestServices.GetService<IKeycloakAdminService>();
+        if (keycloakAdmin is null)
+        {
+            return;
+        }
+
+        var userId = await keycloakAdmin.GetUserIdByEmailAsync(email, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            identity.AddClaim(new Claim("sub", userId));
         }
     }
 
@@ -112,6 +203,17 @@ public static class KeycloakClaims
 
     public static string? GetEmail(ClaimsPrincipal user) =>
         user.FindFirst("email")?.Value;
+
+    public static string? GetUserId(ClaimsPrincipal? user)
+    {
+        if (user is null)
+        {
+            return null;
+        }
+
+        return user.FindFirst("sub")?.Value
+            ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    }
 
     public static Guid? GetTenantId(ClaimsPrincipal user)
     {
@@ -165,6 +267,7 @@ public static class KeycloakClaims
         }
 
         return new KeycloakUserInfo(
+            payload.Sub,
             FirstNonEmpty(payload.Name, payload.PreferredUsername, ComposeName(payload.GivenName, payload.FamilyName)),
             payload.Email,
             roles,
@@ -238,6 +341,7 @@ public static class KeycloakClaims
         }
 
         return new KeycloakUserInfo(
+            sub,
             FirstNonEmpty(
                 adminUser.Name,
                 ComposeName(adminUser.FirstName, adminUser.LastName),
@@ -288,6 +392,10 @@ public static class KeycloakClaims
 
         return !role.StartsWith("default-roles-", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsApplicationRole(string role) =>
+        role.Equals(Common.AppRoles.Admin, StringComparison.OrdinalIgnoreCase) ||
+        Common.AppRoles.TenantRoles.Contains(role, StringComparer.OrdinalIgnoreCase);
 
     private static IEnumerable<string> ExtractRolesFromRealmAccess(ClaimsPrincipal user)
     {
@@ -349,6 +457,9 @@ public static class KeycloakClaims
 
     private sealed class UserInfoResponse
     {
+        [JsonPropertyName("sub")]
+        public string? Sub { get; set; }
+
         [JsonPropertyName("name")]
         public string? Name { get; set; }
 

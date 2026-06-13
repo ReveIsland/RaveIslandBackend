@@ -17,7 +17,6 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 
         return new AppDbContext(
             optionsBuilder.Options,
-            provider.GetRequiredService<IHttpContextAccessor>(),
-            provider.GetRequiredService<IServiceScopeFactory>());
+            provider.GetRequiredService<IHttpContextAccessor>());
     }
 }

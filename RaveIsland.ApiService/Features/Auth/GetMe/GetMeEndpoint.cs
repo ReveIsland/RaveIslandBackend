@@ -20,6 +20,7 @@ public sealed class GetMeEndpoint : IEndpoint
         IConfiguration configuration,
         IHostEnvironment environment,
         ITenantIdResolver tenantIdResolver,
+        ITenantMembershipResolver tenantMembershipResolver,
         CancellationToken cancellationToken)
     {
         if (user.Identity?.IsAuthenticated != true)
@@ -34,7 +35,8 @@ public sealed class GetMeEndpoint : IEndpoint
             environment,
             cancellationToken);
 
-        var tenantId = tenantIdResolver.GetTenantId();
+        var tenantId = tenantIdResolver.GetTenantId()
+            ?? await tenantMembershipResolver.ResolveTenantIdAsync(cancellationToken);
         string? tenantName = null;
 
         if (tenantId.HasValue)
