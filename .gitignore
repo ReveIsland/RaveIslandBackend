@@ -1,0 +1,52 @@
+# Build outputs
+**/bin/
+**/obj/
+**/out/
+**/publish/
+
+# IDE / OS
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.DS_Store
+Thumbs.db
+
+# .NET
+*.dll
+*.exe
+*.pdb
+*.cache
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Node / frontend
+node_modules/
+**/node_modules/
+dist/
+dist-ssr/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Aspire / local dev
+.aspire/
+*.tsbuildinfo
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+**/appsettings.Development.json
+**/secrets.json
+
+# Test / dev artifacts
+keycloak-admin-login-result.png
+*.log
