@@ -7,6 +7,7 @@ import { RaveAuthProvider } from "./auth/RaveAuthProvider";
 import { AdminPage } from "./pages/AdminPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LandingPage } from "./pages/LandingPage";
+import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<AdminLayout />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/profile" element={<ProfileSettingsPage />} />
                 <Route path="/admin" element={<AdminPage />} />
               </Route>
             </Route>

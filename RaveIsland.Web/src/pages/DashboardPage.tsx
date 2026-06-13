@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "react-oidc-context";
 import { Database, Package, ShieldCheck, UserRound } from "lucide-react";
+import { useCurrentUser } from "../auth/CurrentUserContext";
 import { Button } from "../components/ui/button";
 import {
   Card,
@@ -20,12 +21,6 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
-
-type MeResponse = {
-  name?: string;
-  email?: string;
-  roles?: string[];
-};
 
 type ItemResponse = {
   id: string;
@@ -61,13 +56,11 @@ function StatCard({
 
 export function DashboardPage() {
   const auth = useAuth();
-  const [data, setData] = useState<MeResponse | null>(null);
+  const { profile, isLoading: isLoadingProfile, error } = useCurrentUser();
   const [items, setItems] = useState<ItemResponse[]>([]);
   const [title, setTitle] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [itemsError, setItemsError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
 
   const authHeaders = useCallback(() => {
@@ -104,30 +97,6 @@ export function DashboardPage() {
   }, [authHeaders]);
 
   useEffect(() => {
-    const headers = authHeaders();
-    if (!headers) {
-      return;
-    }
-
-    setIsLoadingProfile(true);
-    fetch("/api/me", { headers })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`API returned ${response.status}`);
-        }
-        return response.json() as Promise<MeResponse>;
-      })
-      .then((profile) => {
-        setData(profile);
-        setError(null);
-      })
-      .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : "Failed to load profile"),
-      )
-      .finally(() => setIsLoadingProfile(false));
-  }, [authHeaders]);
-
-  useEffect(() => {
     void loadItems();
   }, [loadItems]);
 
@@ -161,7 +130,7 @@ export function DashboardPage() {
     }
   }
 
-  const roleCount = data?.roles?.length ?? 0;
+  const roleCount = profile?.roles.length ?? 0;
 
   return (
     <div className="space-y-8">
@@ -187,7 +156,7 @@ export function DashboardPage() {
         />
         <StatCard
           title="Account"
-          value={isLoadingProfile ? "—" : data?.name?.split(" ")[0] ?? "Active"}
+          value={isLoadingProfile ? "—" : profile?.name?.split(" ")[0] ?? "Active"}
           description="Signed in via OIDC"
           icon={UserRound}
         />
@@ -214,21 +183,21 @@ export function DashboardPage() {
                 <Skeleton className="h-6 w-1/3" />
               </div>
             )}
-            {!isLoadingProfile && !error && data && (
+            {!isLoadingProfile && !error && profile && (
               <dl className="space-y-4 text-sm">
                 <div>
                   <dt className="text-muted-foreground">Name</dt>
-                  <dd className="mt-1 font-medium">{data.name ?? "Unknown"}</dd>
+                  <dd className="mt-1 font-medium">{profile.name}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Email</dt>
-                  <dd className="mt-1 font-medium">{data.email ?? "Not provided"}</dd>
+                  <dd className="mt-1 font-medium">{profile.email ?? "Not provided"}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Roles</dt>
                   <dd className="mt-2 flex flex-wrap gap-2">
-                    {(data.roles ?? []).length > 0 ? (
-                      data.roles!.map((role) => (
+                    {profile.roles.length > 0 ? (
+                      profile.roles.map((role) => (
                         <Badge key={role} variant="secondary">
                           {role}
                         </Badge>

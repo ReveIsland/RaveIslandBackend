@@ -140,34 +140,18 @@ app.MapGet("/api/me", async (
         return Results.Unauthorized();
     }
 
-    var name = KeycloakClaims.GetDisplayName(user);
-    var email = KeycloakClaims.GetEmail(user);
-    var roles = KeycloakClaims.GetRoles(user);
-
-    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email))
-    {
-        var userInfo = await KeycloakClaims.TryFetchUserInfoAsync(
-            httpContext,
-            configuration,
-            environment,
-            cancellationToken);
-
-        if (userInfo is not null)
-        {
-            name ??= userInfo.Name;
-            email ??= userInfo.Email;
-            if (roles.Count == 0 && userInfo.Roles.Count > 0)
-            {
-                roles = userInfo.Roles;
-            }
-        }
-    }
+    var profile = await KeycloakClaims.ResolveUserProfileAsync(
+        user,
+        httpContext,
+        configuration,
+        environment,
+        cancellationToken);
 
     return Results.Ok(new
     {
-        name,
-        email,
-        roles
+        name = profile.Name,
+        email = profile.Email,
+        roles = profile.Roles
     });
 }).RequireAuthorization();
 

@@ -1,16 +1,14 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import type { ComponentType } from "react";
-import { useAuth } from "react-oidc-context";
+import { CurrentUserProvider, useCurrentUser } from "../../auth/CurrentUserContext";
 import {
   BarChart3,
   LayoutDashboard,
-  LogOut,
   Waves,
 } from "lucide-react";
-import { Button } from "../ui/button";
-import { Separator } from "../ui/separator";
 import { Badge } from "../ui/badge";
 import { ThemeToggle } from "../theme/ThemeToggle";
+import { UserMenu } from "./UserMenu";
 import { cn } from "../../lib/utils";
 
 const navItems: Array<{
@@ -23,22 +21,21 @@ const navItems: Array<{
   { to: "/admin", label: "Analytics", icon: BarChart3, adminOnly: true },
 ];
 
-export function AdminLayout() {
-  const auth = useAuth();
+function AdminLayoutShell() {
+  const { profile } = useCurrentUser();
   const location = useLocation();
-  const roles = (auth.user?.profile?.roles as string[] | undefined) ?? [];
+  const roles = profile?.roles ?? [];
   const isAdmin = roles.includes("admin");
-  const displayName =
-    auth.user?.profile?.preferred_username?.toString() ??
-    auth.user?.profile?.name?.toString() ??
-    "User";
+  const displayName = profile?.name ?? "User";
 
   const pageTitle =
     location.pathname === "/admin"
       ? "Analytics"
-      : location.pathname === "/dashboard"
-        ? "Dashboard"
-        : "Admin Panel";
+      : location.pathname === "/profile"
+        ? "Profile settings"
+        : location.pathname === "/dashboard"
+          ? "Dashboard"
+          : "Admin Panel";
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -105,11 +102,7 @@ export function AdminLayout() {
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Separator orientation="vertical" className="mx-1 h-6" />
-            <Button variant="outline" size="sm" onClick={() => void auth.signoutRedirect()}>
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Log out</span>
-            </Button>
+            <UserMenu />
           </div>
         </header>
 
@@ -139,5 +132,13 @@ export function AdminLayout() {
         </main>
       </div>
     </div>
+  );
+}
+
+export function AdminLayout() {
+  return (
+    <CurrentUserProvider>
+      <AdminLayoutShell />
+    </CurrentUserProvider>
   );
 }

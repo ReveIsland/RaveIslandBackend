@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "react-oidc-context";
 import { Navigate } from "react-router-dom";
 import { Activity, Database, Eye } from "lucide-react";
+import { useCurrentUser } from "../auth/CurrentUserContext";
 import {
   Card,
   CardContent,
@@ -45,7 +46,8 @@ function MetricCard({
 
 export function AdminPage() {
   const auth = useAuth();
-  const roles = (auth.user?.profile?.roles as string[] | undefined) ?? [];
+  const { profile, isLoading: isLoadingProfile } = useCurrentUser();
+  const roles = profile?.roles ?? [];
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,6 +78,15 @@ export function AdminPage() {
       )
       .finally(() => setIsLoading(false));
   }, [auth.user?.access_token, roles]);
+
+  if (isLoadingProfile) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
 
   if (!roles.includes("admin")) {
     return <Navigate to="/dashboard" replace />;

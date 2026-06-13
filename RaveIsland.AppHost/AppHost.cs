@@ -30,6 +30,8 @@ var apiService = builder.AddProject<Projects.RaveIsland_ApiService>("apiservice"
     .WaitFor(keycloak)
     .WaitFor(keycloakSetup)
     .WaitFor(raveDb)
+    .WithEnvironment("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+    .WithEnvironment("KC_BOOTSTRAP_ADMIN_PASSWORD", keycloakAdminPassword)
     .WithHttpHealthCheck("/health");
 
 builder.AddViteApp("web", "../RaveIsland.Web")

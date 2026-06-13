@@ -4,7 +4,13 @@ using System.Text.Json.Serialization;
 
 namespace RaveIsland.ApiService;
 
-internal sealed record KeycloakUserInfo(string? Name, string? Email, IReadOnlyList<string> Roles);
+internal sealed record UserProfile(string? Name, string? Email, IReadOnlyList<string> Roles);
+
+internal sealed record KeycloakUserInfo(
+    string? Name,
+    string? Email,
+    IReadOnlyList<string> Roles,
+    string? PreferredUsername);
 
 internal static class KeycloakClaims
 {
@@ -13,6 +19,57 @@ internal static class KeycloakClaims
         "offline_access",
         "uma_authorization",
     };
+
+    public static async Task<UserProfile> ResolveUserProfileAsync(
+        ClaimsPrincipal user,
+        HttpContext httpContext,
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        CancellationToken cancellationToken = default)
+    {
+        var name = GetDisplayName(user);
+        var email = GetEmail(user);
+        var roles = GetRoles(user);
+
+        var userInfo = await TryFetchUserInfoAsync(
+            httpContext,
+            configuration,
+            environment,
+            cancellationToken);
+
+        if (userInfo is not null)
+        {
+            name = FirstNonEmpty(name, userInfo.Name, userInfo.PreferredUsername);
+            email = FirstNonEmpty(email, userInfo.Email);
+            if (roles.Count == 0 && userInfo.Roles.Count > 0)
+            {
+                roles = userInfo.Roles;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(email))
+        {
+            var adminUser = await TryFetchUserFromAdminApiAsync(
+                user,
+                configuration,
+                environment,
+                cancellationToken);
+
+            if (adminUser is not null)
+            {
+                name = FirstNonEmpty(name, adminUser.Name, adminUser.PreferredUsername);
+                email = FirstNonEmpty(email, adminUser.Email);
+            }
+        }
+
+        name = FirstNonEmpty(
+            name,
+            user.FindFirst("preferred_username")?.Value,
+            ComposeName(user.FindFirst("given_name")?.Value, user.FindFirst("family_name")?.Value));
+
+        return new UserProfile(name, email, roles);
+    }
+
     public static void MapRealmRoles(ClaimsPrincipal principal)
     {
         if (principal.Identity is not ClaimsIdentity identity)
@@ -88,10 +145,100 @@ internal static class KeycloakClaims
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray() ?? [];
 
+        if (roles.Length == 0 && payload.RealmAccess?.Roles is { Length: > 0 } realmRoles)
+        {
+            roles = realmRoles
+                .Where(IsMeaningfulRole)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
         return new KeycloakUserInfo(
             FirstNonEmpty(payload.Name, payload.PreferredUsername, ComposeName(payload.GivenName, payload.FamilyName)),
             payload.Email,
-            roles);
+            roles,
+            payload.PreferredUsername);
+    }
+
+    public static async Task<KeycloakUserInfo?> TryFetchUserFromAdminApiAsync(
+        ClaimsPrincipal user,
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        CancellationToken cancellationToken = default)
+    {
+        if (!environment.IsDevelopment())
+        {
+            return null;
+        }
+
+        var sub = user.FindFirst("sub")?.Value;
+        if (string.IsNullOrWhiteSpace(sub))
+        {
+            return null;
+        }
+
+        var adminPassword = configuration["KC_BOOTSTRAP_ADMIN_PASSWORD"]
+            ?? configuration["Parameters:keycloak-password"];
+        if (string.IsNullOrWhiteSpace(adminPassword))
+        {
+            return null;
+        }
+
+        var adminUsername = configuration["KC_BOOTSTRAP_ADMIN_USERNAME"] ?? "admin";
+        var keycloakBase = ResolveKeycloakBase(configuration, environment);
+
+        using var http = CreateKeycloakHttpClient(environment);
+
+        using var tokenContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = "admin-cli",
+            ["grant_type"] = "password",
+            ["username"] = adminUsername,
+            ["password"] = adminPassword,
+        });
+
+        using var tokenResponse = await http.PostAsync(
+            $"{keycloakBase}/realms/master/protocol/openid-connect/token",
+            tokenContent,
+            cancellationToken);
+
+        if (!tokenResponse.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var tokenPayload = await tokenResponse.Content.ReadFromJsonAsync<AdminTokenResponse>(cancellationToken);
+        if (string.IsNullOrWhiteSpace(tokenPayload?.AccessToken))
+        {
+            return null;
+        }
+
+        using var userRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{keycloakBase}/admin/realms/raveisland/users/{sub}");
+        userRequest.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenPayload.AccessToken);
+
+        using var userResponse = await http.SendAsync(userRequest, cancellationToken);
+        if (!userResponse.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var adminUser = await userResponse.Content.ReadFromJsonAsync<AdminUserResponse>(cancellationToken);
+        if (adminUser is null)
+        {
+            return null;
+        }
+
+        return new KeycloakUserInfo(
+            FirstNonEmpty(
+                adminUser.Name,
+                ComposeName(adminUser.FirstName, adminUser.LastName),
+                adminUser.Username),
+            adminUser.Email,
+            [],
+            adminUser.Username);
     }
 
     public static string ResolveKeycloakBase(IConfiguration configuration, IHostEnvironment environment)
@@ -144,6 +291,11 @@ internal static class KeycloakClaims
             return [];
         }
 
+        return ExtractRolesFromRealmAccessJson(realmAccess);
+    }
+
+    private static string[] ExtractRolesFromRealmAccessJson(string realmAccess)
+    {
         try
         {
             using var document = JsonDocument.Parse(realmAccess);
@@ -156,8 +308,9 @@ internal static class KeycloakClaims
             return rolesElement.EnumerateArray()
                 .Where(role => role.ValueKind == JsonValueKind.String)
                 .Select(role => role.GetString())
-                .Where(role => !string.IsNullOrWhiteSpace(role))
+                .Where(IsMeaningfulRole)
                 .Select(role => role!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
         }
         catch (JsonException)
@@ -207,5 +360,39 @@ internal static class KeycloakClaims
 
         [JsonPropertyName("roles")]
         public string[]? Roles { get; set; }
+
+        [JsonPropertyName("realm_access")]
+        public RealmAccessResponse? RealmAccess { get; set; }
+    }
+
+    private sealed class RealmAccessResponse
+    {
+        [JsonPropertyName("roles")]
+        public string[]? Roles { get; set; }
+    }
+
+    private sealed class AdminTokenResponse
+    {
+        [JsonPropertyName("access_token")]
+        public string? AccessToken { get; set; }
+    }
+
+    private sealed class AdminUserResponse
+    {
+        [JsonPropertyName("username")]
+        public string? Username { get; set; }
+
+        [JsonPropertyName("firstName")]
+        public string? FirstName { get; set; }
+
+        [JsonPropertyName("lastName")]
+        public string? LastName { get; set; }
+
+        [JsonPropertyName("email")]
+        public string? Email { get; set; }
+
+        public string? Name => FirstNonEmpty(
+            ComposeName(FirstName, LastName),
+            Username);
     }
 }

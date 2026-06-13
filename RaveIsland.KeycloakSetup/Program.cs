@@ -80,9 +80,12 @@ else
     Console.WriteLine("Realm user '{0}' already exists (id: {1}).", adminUsername, user.Id);
 }
 
+await EnsureUserProfileAsync(http, keycloakBase, realm, token, user.Id!, adminUsername);
 await EnsurePasswordAsync(http, keycloakBase, realm, token, user.Id!, adminUserPassword);
 await EnsureRealmRoleAsync(http, keycloakBase, realm, token, user.Id!, realmRoleAdmin);
 await EnsureAudienceClientScopeAsync(http, keycloakBase, realm, token, "raveisland-web");
+await EnsureProfileClientScopeAsync(http, keycloakBase, realm, token);
+await EnsureEmailClientScopeAsync(http, keycloakBase, realm, token);
 await EnsureDefaultClientScopesAsync(
     http,
     keycloakBase,
@@ -95,7 +98,16 @@ await EnsureDefaultClientScopesAsync(
     "acr",
     "role_list",
     "raveisland-audience");
-await EnsureClientDefaultScopesAsync(http, keycloakBase, realm, token, "raveisland-web", "raveisland-audience");
+await EnsureClientDefaultScopesAsync(
+    http,
+    keycloakBase,
+    realm,
+    token,
+    "raveisland-web",
+    "profile",
+    "email",
+    "roles",
+    "raveisland-audience");
 
 Console.WriteLine("Keycloak setup completed for user '{0}'.", adminUsername);
 return;
@@ -201,6 +213,264 @@ static async Task EnsurePasswordAsync(HttpClient http, string keycloakBase, stri
         var body = await response.Content.ReadAsStringAsync();
         throw new InvalidOperationException($"Failed to set password for user {userId}: {(int)response.StatusCode} {body}");
     }
+}
+
+static async Task EnsureUserProfileAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token,
+    string userId,
+    string username)
+{
+    using var request = new HttpRequestMessage(HttpMethod.Put, $"{keycloakBase}/admin/realms/{realm}/users/{userId}")
+    {
+        Content = JsonContent.Create(new
+        {
+            enabled = true,
+            emailVerified = true,
+            firstName = "Admin",
+            lastName = "User",
+            email = $"{username}@raveisland.local",
+        }),
+    };
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    var response = await http.SendAsync(request);
+    if (!response.IsSuccessStatusCode)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        throw new InvalidOperationException(
+            $"Failed to update profile for user '{username}': {(int)response.StatusCode} {body}");
+    }
+}
+
+static async Task EnsureProfileClientScopeAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token)
+{
+    var scope = await EnsureClientScopeAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        "profile",
+        includeInTokenScope: true,
+        displayOnConsent: true);
+
+    await EnsureProtocolMapperAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        scope.Id!,
+        "username",
+        new Dictionary<string, string>
+        {
+            ["user.attribute"] = "username",
+            ["claim.name"] = "preferred_username",
+            ["jsonType.label"] = "String",
+            ["id.token.claim"] = "true",
+            ["access.token.claim"] = "true",
+            ["userinfo.token.claim"] = "true",
+        },
+        "oidc-usermodel-attribute-mapper");
+
+    await EnsureProtocolMapperAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        scope.Id!,
+        "full name",
+        new Dictionary<string, string>
+        {
+            ["id.token.claim"] = "true",
+            ["access.token.claim"] = "true",
+            ["userinfo.token.claim"] = "true",
+        },
+        "oidc-full-name-mapper");
+
+    await EnsureProtocolMapperAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        scope.Id!,
+        "given name",
+        new Dictionary<string, string>
+        {
+            ["user.attribute"] = "firstName",
+            ["claim.name"] = "given_name",
+            ["jsonType.label"] = "String",
+            ["id.token.claim"] = "true",
+            ["access.token.claim"] = "true",
+            ["userinfo.token.claim"] = "true",
+        },
+        "oidc-usermodel-attribute-mapper");
+
+    await EnsureProtocolMapperAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        scope.Id!,
+        "family name",
+        new Dictionary<string, string>
+        {
+            ["user.attribute"] = "lastName",
+            ["claim.name"] = "family_name",
+            ["jsonType.label"] = "String",
+            ["id.token.claim"] = "true",
+            ["access.token.claim"] = "true",
+            ["userinfo.token.claim"] = "true",
+        },
+        "oidc-usermodel-attribute-mapper");
+}
+
+static async Task EnsureEmailClientScopeAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token)
+{
+    var scope = await EnsureClientScopeAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        "email",
+        includeInTokenScope: true,
+        displayOnConsent: true);
+
+    await EnsureProtocolMapperAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        scope.Id!,
+        "email",
+        new Dictionary<string, string>
+        {
+            ["user.attribute"] = "email",
+            ["claim.name"] = "email",
+            ["jsonType.label"] = "String",
+            ["id.token.claim"] = "true",
+            ["access.token.claim"] = "true",
+            ["userinfo.token.claim"] = "true",
+        },
+        "oidc-usermodel-attribute-mapper");
+}
+
+static async Task<ClientScopeRepresentation> EnsureClientScopeAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token,
+    string scopeName,
+    bool includeInTokenScope,
+    bool displayOnConsent)
+{
+    using var scopesRequest = new HttpRequestMessage(HttpMethod.Get, $"{keycloakBase}/admin/realms/{realm}/client-scopes");
+    scopesRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    var allScopes = await SendAsync<ClientScopeRepresentation[]>(http, scopesRequest) ?? [];
+    var existing = allScopes.FirstOrDefault(s =>
+        string.Equals(s.Name, scopeName, StringComparison.OrdinalIgnoreCase));
+
+    if (existing?.Id is not null)
+    {
+        return existing;
+    }
+
+    using var createScopeRequest = new HttpRequestMessage(
+        HttpMethod.Post,
+        $"{keycloakBase}/admin/realms/{realm}/client-scopes")
+    {
+        Content = JsonContent.Create(new
+        {
+            name = scopeName,
+            protocol = "openid-connect",
+            attributes = new Dictionary<string, string>
+            {
+                ["include.in.token.scope"] = includeInTokenScope ? "true" : "false",
+                ["display.on.consent.screen"] = displayOnConsent ? "true" : "false",
+            },
+        }),
+    };
+    createScopeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    var createScopeResponse = await http.SendAsync(createScopeRequest);
+    if (createScopeResponse.StatusCode != HttpStatusCode.Created)
+    {
+        var body = await createScopeResponse.Content.ReadAsStringAsync();
+        throw new InvalidOperationException(
+            $"Failed to create client scope '{scopeName}': {(int)createScopeResponse.StatusCode} {body}");
+    }
+
+    var location = createScopeResponse.Headers.Location?.ToString();
+    var created = new ClientScopeRepresentation
+    {
+        Id = location?.Split('/').LastOrDefault(),
+        Name = scopeName,
+    };
+
+    if (!string.IsNullOrWhiteSpace(created.Id))
+    {
+        Console.WriteLine("Created client scope '{0}'.", scopeName);
+        return created;
+    }
+
+    allScopes = await SendAsync<ClientScopeRepresentation[]>(http, scopesRequest) ?? [];
+    return allScopes.First(s => string.Equals(s.Name, scopeName, StringComparison.OrdinalIgnoreCase));
+}
+
+static async Task EnsureProtocolMapperAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token,
+    string scopeId,
+    string mapperName,
+    Dictionary<string, string> config,
+    string protocolMapper)
+{
+    using var mappersRequest = new HttpRequestMessage(
+        HttpMethod.Get,
+        $"{keycloakBase}/admin/realms/{realm}/client-scopes/{scopeId}/protocol-mappers/models");
+    mappersRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    var mappers = await SendAsync<ProtocolMapperRepresentation[]>(http, mappersRequest) ?? [];
+    if (mappers.Any(m => string.Equals(m.Name, mapperName, StringComparison.OrdinalIgnoreCase)))
+    {
+        return;
+    }
+
+    using var createMapperRequest = new HttpRequestMessage(
+        HttpMethod.Post,
+        $"{keycloakBase}/admin/realms/{realm}/client-scopes/{scopeId}/protocol-mappers/models")
+    {
+        Content = JsonContent.Create(new
+        {
+            name = mapperName,
+            protocol = "openid-connect",
+            protocolMapper,
+            config,
+        }),
+    };
+    createMapperRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    var response = await http.SendAsync(createMapperRequest);
+    if (!response.IsSuccessStatusCode)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        throw new InvalidOperationException(
+            $"Failed to create mapper '{mapperName}' on scope '{scopeId}': {(int)response.StatusCode} {body}");
+    }
+
+    Console.WriteLine("Added protocol mapper '{0}'.", mapperName);
 }
 
 static async Task EnsureAudienceClientScopeAsync(
@@ -488,6 +758,12 @@ file sealed class ClientScopeRepresentation
     [JsonPropertyName("id")]
     public string? Id { get; set; }
 
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+}
+
+file sealed class ProtocolMapperRepresentation
+{
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 }
