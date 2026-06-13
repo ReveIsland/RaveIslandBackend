@@ -108,6 +108,8 @@ export function EventsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Title</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Category</TableHead>
                   {admin && <TableHead>Tenant</TableHead>}
                   <TableHead>Created by</TableHead>
                   <TableHead>Updated</TableHead>
@@ -120,13 +122,13 @@ export function EventsPage() {
                     <TableCell>
                       <div>
                         <div className="font-medium">{eventItem.title}</div>
-                        {eventItem.description && (
-                          <div className="text-xs text-muted-foreground">
-                            {eventItem.description}
-                          </div>
+                        {eventItem.tagline && (
+                          <div className="text-xs text-muted-foreground">{eventItem.tagline}</div>
                         )}
                       </div>
                     </TableCell>
+                    <TableCell>{eventItem.eventStatusName ?? "—"}</TableCell>
+                    <TableCell>{eventItem.eventCategoryName ?? "—"}</TableCell>
                     {admin && <TableCell>{eventItem.tenantName}</TableCell>}
                     <TableCell>{eventItem.createdByName ?? "Unknown"}</TableCell>
                     <TableCell>
@@ -138,6 +140,12 @@ export function EventsPage() {
                         className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
                       >
                         Edit
+                      </Link>
+                      <Link
+                        to={`/events/${eventItem.id}/analytics`}
+                        className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                      >
+                        Stats
                       </Link>
                       <Button
                         size="sm"

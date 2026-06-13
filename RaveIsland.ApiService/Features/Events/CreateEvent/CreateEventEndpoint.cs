@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using RaveIsland.ApiService.Common;
 using RaveIsland.ApiService.Infrastructure.Identity;
+using RaveIsland.ApiService.Infrastructure.Lookups;
 using RaveIsland.ApiService.Infrastructure.Persistence;
 using RaveIsland.ApiService.Infrastructure.Persistence.Entities;
 using RaveIsland.ApiService.Infrastructure.Tenancy;
@@ -24,28 +25,33 @@ public sealed class CreateEventEndpoint : IEndpoint
             return Results.BadRequest(new { error = "Title is required." });
         }
 
+        if (string.IsNullOrWhiteSpace(request.Description))
+        {
+            return Results.BadRequest(new { error = "Description is required." });
+        }
+
+        if (!request.EventCategoryId.HasValue)
+        {
+            return Results.BadRequest(new { error = "Event category is required." });
+        }
+
+        if (!await LookupHelper.IsValidValueAsync(db, request.EventCategoryId.Value, LookupTypeCodes.EventCategory, cancellationToken))
+        {
+            return Results.BadRequest(new { error = "Invalid event category." });
+        }
+
         var tenantId = tenantContext.IsAdmin ? request.TenantId ?? tenantContext.TenantId : tenantContext.TenantId;
         if (!tenantId.HasValue)
         {
             return Results.BadRequest(new { error = "Tenant context is required to create an event." });
         }
 
-        if (!tenantContext.IsAdmin)
+        var tenantQuery = tenantContext.IsAdmin
+            ? db.Tenants.IgnoreQueryFilters()
+            : db.Tenants;
+        if (!await tenantQuery.AnyAsync(t => t.Id == tenantId.Value && t.IsActive, cancellationToken))
         {
-            var tenantExists = await db.Tenants.AnyAsync(t => t.Id == tenantId.Value && t.IsActive, cancellationToken);
-            if (!tenantExists)
-            {
-                return Results.NotFound(new { error = "Tenant not found." });
-            }
-        }
-        else
-        {
-            var tenantExists = await db.Tenants.IgnoreQueryFilters()
-                .AnyAsync(t => t.Id == tenantId.Value && t.IsActive, cancellationToken);
-            if (!tenantExists)
-            {
-                return Results.NotFound(new { error = "Tenant not found." });
-            }
+            return Results.NotFound(new { error = "Tenant not found." });
         }
 
         var userId = KeycloakClaims.GetUserId(user);
@@ -56,13 +62,37 @@ public sealed class CreateEventEndpoint : IEndpoint
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var draftStatusId = await EventDefaults.GetDraftStatusIdAsync(db, cancellationToken);
+        var publicVisibilityId = await EventDefaults.GetPublicVisibilityIdAsync(db, cancellationToken);
+        if (!draftStatusId.HasValue || !publicVisibilityId.HasValue)
+        {
+            return Results.Problem("Required lookup values are not seeded.");
+        }
+
+        Guid eventStatusId = draftStatusId.Value;
+        if (request.EventStatusId.HasValue)
+        {
+            if (!await LookupHelper.IsValidValueAsync(db, request.EventStatusId.Value, LookupTypeCodes.EventStatus, cancellationToken))
+            {
+                return Results.BadRequest(new { error = "Invalid event status." });
+            }
+
+            eventStatusId = request.EventStatusId.Value;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var eventEntity = new EventEntity
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId.Value,
             Title = request.Title.Trim(),
-            Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            Tagline = string.IsNullOrWhiteSpace(request.Tagline) ? null : request.Tagline.Trim(),
+            Description = request.Description.Trim(),
+            EventCategoryId = request.EventCategoryId.Value,
+            Theme = string.IsNullOrWhiteSpace(request.Theme) ? null : request.Theme.Trim(),
+            EventStatusId = eventStatusId,
+            OrganizerReference = string.IsNullOrWhiteSpace(request.OrganizerReference) ? null : request.OrganizerReference.Trim(),
+            VisibilityTypeId = publicVisibilityId.Value,
             CreatedByUserId = userId,
             CreatedByName = KeycloakClaims.GetDisplayName(user),
             CreatedAt = now,
@@ -72,18 +102,16 @@ public sealed class CreateEventEndpoint : IEndpoint
         db.Events.Add(eventEntity);
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Created($"/api/events/{eventEntity.Id}", new
-        {
-            eventEntity.Id,
-            eventEntity.TenantId,
-            eventEntity.Title,
-            eventEntity.Description,
-            eventEntity.CreatedByUserId,
-            eventEntity.CreatedByName,
-            eventEntity.CreatedAt,
-            eventEntity.UpdatedAt,
-        });
+        return Results.Created($"/api/events/{eventEntity.Id}", new { eventEntity.Id });
     }
 
-    public sealed record CreateEventRequest(string Title, string? Description, Guid? TenantId);
+    public sealed record CreateEventRequest(
+        string Title,
+        string Description,
+        Guid? EventCategoryId,
+        string? Tagline,
+        string? Theme,
+        Guid? EventStatusId,
+        string? OrganizerReference,
+        Guid? TenantId);
 }

@@ -5,6 +5,7 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  Database,
   LayoutDashboard,
   Users,
   Waves,
@@ -27,6 +28,12 @@ const navItems: Array<{
     label: "Events",
     icon: CalendarDays,
     visible: (roles) => isTenantMember(roles),
+  },
+  {
+    to: "/admin/lookups",
+    label: "Reference Data",
+    icon: Database,
+    visible: (roles) => isPlatformAdmin(roles),
   },
   {
     to: "/admin/tenants",
@@ -55,12 +62,22 @@ const pageTitles: Record<string, string> = {
   "/events/new": "Create event",
   "/admin": "Analytics",
   "/admin/tenants": "Tenants",
+  "/admin/lookups": "Reference Data",
   "/admin/users": "User management",
 };
 
 function resolvePageTitle(pathname: string): string {
   if (pathname.endsWith("/edit") && pathname.startsWith("/events/")) {
     return "Edit event";
+  }
+  if (pathname.endsWith("/analytics") && pathname.startsWith("/events/")) {
+    return "Event analytics";
+  }
+  if (pathname.endsWith("/check-in") && pathname.startsWith("/events/")) {
+    return "Check-in";
+  }
+  if (pathname.startsWith("/admin/lookups/")) {
+    return "Lookup values";
   }
 
   return pageTitles[pathname] ?? "Admin Panel";

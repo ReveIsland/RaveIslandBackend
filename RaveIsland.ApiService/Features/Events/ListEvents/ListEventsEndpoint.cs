@@ -31,21 +31,13 @@ public sealed class ListEventsEndpoint : IEndpoint
         }
 
         var events = await query
+            .Include(e => e.Tenant)
+            .Include(e => e.EventCategory)
+            .Include(e => e.EventStatus)
+            .Include(e => e.VisibilityType)
             .OrderByDescending(e => e.CreatedAt)
-            .Select(e => new
-            {
-                e.Id,
-                e.TenantId,
-                tenantName = e.Tenant.Name,
-                e.Title,
-                e.Description,
-                e.CreatedByUserId,
-                e.CreatedByName,
-                e.CreatedAt,
-                e.UpdatedAt,
-            })
             .ToListAsync(cancellationToken);
 
-        return Results.Ok(events);
+        return Results.Ok(events.Select(EventMapper.MapSummary));
     }
 }

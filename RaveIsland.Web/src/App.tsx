@@ -14,6 +14,10 @@ import { LandingPage } from "./pages/LandingPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { TenantsPage } from "./pages/admin/TenantsPage";
 import { UsersPage } from "./pages/admin/UsersPage";
+import { LookupTypesPage } from "./pages/admin/LookupTypesPage";
+import { LookupValuesPage } from "./pages/admin/LookupValuesPage";
+import { EventAnalyticsPage } from "./pages/EventAnalyticsPage";
+import { EventCheckInPage } from "./pages/EventCheckInPage";
 
 export default function App() {
   return (
@@ -37,9 +41,13 @@ export default function App() {
                 <Route path="/events" element={<EventsPage />} />
                 <Route path="/events/new" element={<EventFormPage />} />
                 <Route path="/events/:eventId/edit" element={<EventFormPage />} />
+                <Route path="/events/:eventId/analytics" element={<EventAnalyticsPage />} />
+                <Route path="/events/:eventId/check-in" element={<EventCheckInPage />} />
                 <Route element={<RoleRoute anyOf={["admin"]} />}>
                   <Route path="/admin" element={<AdminPage />} />
                   <Route path="/admin/tenants" element={<TenantsPage />} />
+                  <Route path="/admin/lookups" element={<LookupTypesPage />} />
+                  <Route path="/admin/lookups/:typeCode" element={<LookupValuesPage />} />
                 </Route>
                 <Route element={<RoleRoute anyOf={["admin", "tenant-admin"]} />}>
                   <Route path="/admin/users" element={<UsersPage />} />

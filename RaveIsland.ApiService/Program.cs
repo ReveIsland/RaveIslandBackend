@@ -6,6 +6,11 @@ using RaveIsland.ApiService.Common;
 using RaveIsland.ApiService.Infrastructure.Email;
 using RaveIsland.ApiService.Infrastructure.Identity;
 using RaveIsland.ApiService.Infrastructure.Persistence;
+using RaveIsland.ApiService.Features.Events.CheckIn;
+using RaveIsland.ApiService.Features.Events.Promos;
+using RaveIsland.ApiService.Features.Events.Publish;
+using RaveIsland.ApiService.Infrastructure.Lookups;
+using RaveIsland.ApiService.Infrastructure.Media;
 using RaveIsland.ApiService.Infrastructure.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +32,12 @@ builder.Services.AddScoped<ITenantIdResolver, TenantIdResolver>();
 builder.Services.AddScoped<ITenantMembershipResolver, TenantMembershipResolver>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IKeycloakAdminService, KeycloakAdminService>();
+builder.Services.AddScoped<ILookupCacheService, LookupCacheService>();
+builder.Services.AddScoped<ILookupSeeder, LookupSeeder>();
+builder.Services.AddScoped<IEventPublishValidator, EventPublishValidator>();
+builder.Services.AddScoped<IPromoValidationService, PromoValidationService>();
+builder.Services.AddSingleton<IQrTokenService, QrTokenService>();
+builder.Services.AddSingleton<IMediaStorageService, LocalMediaStorageService>();
 
 builder.Services.AddCors(options =>
 {
@@ -114,6 +125,8 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
+    var seeder = scope.ServiceProvider.GetRequiredService<ILookupSeeder>();
+    await seeder.SeedAsync();
 }
 
 app.UseExceptionHandler();
@@ -124,6 +137,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("WebDev");
+var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
+Directory.CreateDirectory(uploadsPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
+    RequestPath = "/uploads",
+});
 app.UseAuthentication();
 app.UseMiddleware<TenantResolutionMiddleware>();
 app.UseAuthorization();

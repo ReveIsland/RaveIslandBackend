@@ -16,16 +16,14 @@ public sealed class GetEventEndpoint : IEndpoint
         ITenantContext tenantContext,
         CancellationToken cancellationToken)
     {
-        var eventEntity = tenantContext.IsAdmin
-            ? await db.Events
-                .IgnoreQueryFilters()
-                .AsNoTracking()
-                .Include(e => e.Tenant)
-                .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken)
-            : await db.Events
-                .AsNoTracking()
-                .Include(e => e.Tenant)
-                .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
+        var query = tenantContext.IsAdmin
+            ? db.Events.IgnoreQueryFilters().AsNoTracking()
+            : db.Events.AsNoTracking();
+
+        var eventEntity = await query
+            .WithDetails()
+            .Include(e => e.Tenant)
+            .FirstOrDefaultAsync(e => e.Id == eventId, cancellationToken);
 
         if (eventEntity is null)
         {
@@ -38,17 +36,6 @@ public sealed class GetEventEndpoint : IEndpoint
             return Results.Forbid();
         }
 
-        return Results.Ok(new
-        {
-            eventEntity.Id,
-            eventEntity.TenantId,
-            tenantName = eventEntity.Tenant.Name,
-            eventEntity.Title,
-            eventEntity.Description,
-            eventEntity.CreatedByUserId,
-            eventEntity.CreatedByName,
-            eventEntity.CreatedAt,
-            eventEntity.UpdatedAt,
-        });
+        return Results.Ok(EventMapper.MapDetail(eventEntity));
     }
 }

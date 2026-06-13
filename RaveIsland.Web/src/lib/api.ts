@@ -55,12 +55,183 @@ export type EventItem = {
   tenantId: string;
   tenantName?: string;
   title: string;
-  description: string | null;
+  tagline?: string | null;
+  description: string;
+  eventCategoryId?: string;
+  eventCategoryName?: string;
+  eventStatusId?: string;
+  eventStatusName?: string;
+  theme?: string | null;
+  organizerReference?: string | null;
+  venueTypeId?: string | null;
+  primaryGenreId?: string | null;
+  secondaryGenreId?: string | null;
+  soundSystem?: string | null;
+  ageRestrictionId?: string | null;
+  cancellationPolicyId?: string | null;
+  entryPolicy?: string | null;
+  prohibitedItems?: string | null;
+  termsAndConditions?: string | null;
+  visibilityTypeId?: string;
+  visibilityTypeName?: string;
+  inviteCode?: string | null;
+  requiresApproval?: boolean;
+  slug?: string | null;
+  metaTitle?: string | null;
+  metaDescription?: string | null;
   createdByUserId: string;
   createdByName: string | null;
   createdAt: string;
   updatedAt: string;
+  venue?: EventVenue | null;
+  schedules?: EventScheduleItem[];
+  media?: EventMediaItem[];
+  artists?: EventLineupItem[];
+  ticketTypes?: EventTicketTypeItem[];
+  promoCodes?: EventPromoCodeItem[];
+  facilities?: { lookupValueId: string; name: string }[];
+  productionFeatures?: { lookupValueId: string; name: string }[];
 };
+
+export type EventVenue = {
+  id: string;
+  venueName: string;
+  address: string;
+  city: string;
+  districtId: string;
+  districtName?: string;
+  province?: string | null;
+  googleMapsUrl?: string | null;
+  latitude: number;
+  longitude: number;
+  landmarkInstructions?: string | null;
+};
+
+export type EventScheduleItem = {
+  id: string;
+  dayNumber: number;
+  eventDate: string;
+  startTime: string;
+  endTime: string;
+  gatesOpenTime?: string | null;
+  lastEntryTime?: string | null;
+};
+
+export type EventMediaItem = {
+  id: string;
+  mediaType: string;
+  storageUrl: string;
+  thumbnailUrl?: string | null;
+  displayOrder: number;
+  fileName: string;
+};
+
+export type EventLineupItem = {
+  id: string;
+  artistId: string;
+  artistName?: string;
+  stageName?: string;
+  setStart?: string | null;
+  setEnd?: string | null;
+  displayOrder: number;
+  primaryGenreId?: string | null;
+};
+
+export type EventTicketTypeItem = {
+  id: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  quantity: number;
+  quantitySold: number;
+  saleStart?: string | null;
+  saleEnd?: string | null;
+  maxPerUser?: number | null;
+  isActive: boolean;
+  displayOrder: number;
+};
+
+export type EventPromoCodeItem = {
+  id: string;
+  code: string;
+  discountType: string;
+  discountValue: number;
+  expiresAt?: string | null;
+  usageLimit?: number | null;
+  usageCount: number;
+  isActive: boolean;
+};
+
+export type ArtistItem = {
+  id: string;
+  tenantId: string;
+  name: string;
+  stageName?: string | null;
+  bio?: string | null;
+  profileImageUrl?: string | null;
+  artistTypeId?: string | null;
+  primaryGenreId?: string | null;
+};
+
+export type LookupType = {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  isSystem: boolean;
+  createdAt: string;
+};
+
+export type LookupValue = {
+  id: string;
+  lookupTypeId: string;
+  code: string;
+  name: string;
+  displayOrder: number;
+  isActive: boolean;
+  isSystem: boolean;
+  iconUrl?: string | null;
+  metadataJson?: string | null;
+};
+
+export type EventAnalytics = {
+  ticketsSold: number;
+  totalCapacity: number;
+  revenue: number;
+  attendance: number;
+  conversionRate: number;
+  promoUsage: number;
+  ticketTypeBreakdown: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    quantitySold: number;
+    revenue: number;
+  }>;
+};
+
+export type PublishReadiness = {
+  isReady: boolean;
+  errors: string[];
+};
+
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+  token?: string,
+): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new ApiError(await parseError(response), response.status);
+  }
+
+  return response.json() as Promise<T>;
+}
 
 export type UserMember = {
   id: string;
