@@ -7,11 +7,14 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "react-oidc-context";
+import { apiFetch } from "../lib/api";
 
 export type CurrentUserProfile = {
   name: string;
   email: string | null;
   roles: string[];
+  tenantId: string | null;
+  tenantName: string | null;
 };
 
 type CurrentUserContextValue = {
@@ -27,6 +30,8 @@ type MeResponse = {
   name?: string | null;
   email?: string | null;
   roles?: string[];
+  tenantId?: string | null;
+  tenantName?: string | null;
 };
 
 export function CurrentUserProvider({ children }: { children: ReactNode }) {
@@ -49,15 +54,7 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
 
-    fetch("/api/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Profile API returned ${response.status}`);
-        }
-        return response.json() as Promise<MeResponse>;
-      })
+    apiFetch<MeResponse>("/api/me", { token })
       .then((data) => {
         if (cancelled) {
           return;
@@ -74,6 +71,8 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
           name: data.name?.trim() || fallbackName,
           email: data.email?.trim() || null,
           roles: data.roles ?? [],
+          tenantId: data.tenantId ?? null,
+          tenantName: data.tenantName ?? null,
         });
       })
       .catch((err: unknown) => {

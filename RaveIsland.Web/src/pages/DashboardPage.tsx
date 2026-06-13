@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "react-oidc-context";
-import { Database, Package, ShieldCheck, UserRound } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Building2, CalendarDays, ShieldCheck, UserRound } from "lucide-react";
 import { useCurrentUser } from "../auth/CurrentUserContext";
-import { Button } from "../components/ui/button";
 import {
   Card,
   CardContent,
@@ -10,24 +8,10 @@ import {
   CardHeader,
   CardTitle,
 } from "../components/ui/card";
-import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table";
-
-type ItemResponse = {
-  id: string;
-  title: string;
-  createdBy?: string;
-  createdAt: string;
-};
+import { isPlatformAdmin, isTenantAdmin, isTenantMember } from "../lib/api";
+import { cn } from "../lib/utils";
 
 function StatCard({
   title,
@@ -55,135 +39,61 @@ function StatCard({
 }
 
 export function DashboardPage() {
-  const auth = useAuth();
-  const { profile, isLoading: isLoadingProfile, error } = useCurrentUser();
-  const [items, setItems] = useState<ItemResponse[]>([]);
-  const [title, setTitle] = useState("");
-  const [itemsError, setItemsError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoadingItems, setIsLoadingItems] = useState(true);
-
-  const authHeaders = useCallback(() => {
-    if (!auth.user?.access_token) {
-      return undefined;
-    }
-
-    return {
-      Authorization: `Bearer ${auth.user.access_token}`,
-      "Content-Type": "application/json",
-    };
-  }, [auth.user?.access_token]);
-
-  const loadItems = useCallback(async () => {
-    const headers = authHeaders();
-    if (!headers) {
-      return;
-    }
-
-    setIsLoadingItems(true);
-    try {
-      const response = await fetch("/api/items", { headers });
-      if (!response.ok) {
-        throw new Error(`Items API returned ${response.status}`);
-      }
-
-      setItems((await response.json()) as ItemResponse[]);
-      setItemsError(null);
-    } catch (err: unknown) {
-      setItemsError(err instanceof Error ? err.message : "Failed to load items");
-    } finally {
-      setIsLoadingItems(false);
-    }
-  }, [authHeaders]);
-
-  useEffect(() => {
-    void loadItems();
-  }, [loadItems]);
-
-  async function handleCreateItem(event: FormEvent) {
-    event.preventDefault();
-    const headers = authHeaders();
-    if (!headers || !title.trim()) {
-      return;
-    }
-
-    setIsSaving(true);
-    setItemsError(null);
-
-    try {
-      const response = await fetch("/api/items", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ title: title.trim() }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Create item failed with ${response.status}`);
-      }
-
-      setTitle("");
-      await loadItems();
-    } catch (err: unknown) {
-      setItemsError(err instanceof Error ? err.message : "Failed to create item");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  const roleCount = profile?.roles.length ?? 0;
+  const { profile, isLoading, error } = useCurrentUser();
+  const roles = profile?.roles ?? [];
 
   return (
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
         <p className="text-muted-foreground">
-          Manage your profile and PostgreSQL-backed items from the admin panel.
+          Your multi-tenant event provider dashboard.
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Total items"
-          value={isLoadingItems ? "—" : String(items.length)}
-          description="Stored in PostgreSQL"
-          icon={Package}
+          title="Account"
+          value={isLoading ? "—" : profile?.name?.split(" ")[0] ?? "Active"}
+          description="Signed in via Keycloak OIDC"
+          icon={UserRound}
+        />
+        <StatCard
+          title="Organization"
+          value={isLoading ? "—" : profile?.tenantName ?? (isPlatformAdmin(roles) ? "Platform" : "—")}
+          description="Your tenant context"
+          icon={Building2}
         />
         <StatCard
           title="Assigned roles"
-          value={isLoadingProfile ? "—" : String(roleCount)}
+          value={isLoading ? "—" : String(roles.length)}
           description="From Keycloak realm"
           icon={ShieldCheck}
         />
         <StatCard
-          title="Account"
-          value={isLoadingProfile ? "—" : profile?.name?.split(" ")[0] ?? "Active"}
-          description="Signed in via OIDC"
-          icon={UserRound}
-        />
-        <StatCard
-          title="Data source"
-          value="Live"
-          description="Aspire API + Redis cache"
-          icon={Database}
+          title="Events"
+          value="Manage"
+          description="Create and view tenant events"
+          icon={CalendarDays}
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
           <CardHeader>
             <CardTitle>Profile</CardTitle>
             <CardDescription>Loaded from `/api/me`</CardDescription>
           </CardHeader>
           <CardContent>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            {isLoadingProfile && !error && (
+            {isLoading && !error && (
               <div className="space-y-3">
                 <Skeleton className="h-4 w-2/3" />
                 <Skeleton className="h-4 w-1/2" />
                 <Skeleton className="h-6 w-1/3" />
               </div>
             )}
-            {!isLoadingProfile && !error && profile && (
+            {!isLoading && !error && profile && (
               <dl className="space-y-4 text-sm">
                 <div>
                   <dt className="text-muted-foreground">Name</dt>
@@ -193,6 +103,12 @@ export function DashboardPage() {
                   <dt className="text-muted-foreground">Email</dt>
                   <dd className="mt-1 font-medium">{profile.email ?? "Not provided"}</dd>
                 </div>
+                {profile.tenantName && (
+                  <div>
+                    <dt className="text-muted-foreground">Tenant</dt>
+                    <dd className="mt-1 font-medium">{profile.tenantName}</dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-muted-foreground">Roles</dt>
                   <dd className="mt-2 flex flex-wrap gap-2">
@@ -212,65 +128,42 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
-            <CardTitle>Items</CardTitle>
-            <CardDescription>Create and review records persisted by the API.</CardDescription>
+            <CardTitle>Quick actions</CardTitle>
+            <CardDescription>Common tasks based on your role</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={handleCreateItem}>
-              <Input
-                placeholder="New item title"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-              />
-              <Button type="submit" disabled={isSaving || !title.trim()} className="sm:w-auto">
-                {isSaving ? "Saving..." : "Add item"}
-              </Button>
-            </form>
-
-            {itemsError && <p className="text-sm text-destructive">{itemsError}</p>}
-
-            <div className="rounded-md border border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Created by</TableHead>
-                    <TableHead className="text-right">Created at</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoadingItems && (
-                    <TableRow>
-                      <TableCell colSpan={3}>
-                        <div className="space-y-2 py-2">
-                          <Skeleton className="h-4 w-full" />
-                          <Skeleton className="h-4 w-5/6" />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {!isLoadingItems && items.length === 0 && !itemsError && (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        No items yet. Add your first one above.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {!isLoadingItems &&
-                    items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.title}</TableCell>
-                        <TableCell>{item.createdBy ?? "Unknown"}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {new Date(item.createdAt).toLocaleString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
+          <CardContent className="flex flex-col gap-3">
+            {isTenantMember(roles) && (
+              <Link
+                to="/events"
+                className={cn(
+                  "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
+                )}
+              >
+                Manage events
+              </Link>
+            )}
+            {(isPlatformAdmin(roles) || isTenantAdmin(roles)) && (
+              <Link
+                to="/admin/users"
+                className={cn(
+                  "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
+                )}
+              >
+                Manage users
+              </Link>
+            )}
+            {isPlatformAdmin(roles) && (
+              <Link
+                to="/admin/tenants"
+                className={cn(
+                  "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
+                )}
+              >
+                Manage tenants
+              </Link>
+            )}
           </CardContent>
         </Card>
       </div>

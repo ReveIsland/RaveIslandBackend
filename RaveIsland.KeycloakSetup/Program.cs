@@ -83,6 +83,8 @@ else
 await EnsureUserProfileAsync(http, keycloakBase, realm, token, user.Id!, adminUsername);
 await EnsurePasswordAsync(http, keycloakBase, realm, token, user.Id!, adminUserPassword);
 await EnsureRealmRoleAsync(http, keycloakBase, realm, token, user.Id!, realmRoleAdmin);
+await EnsureRealmRolesExistAsync(http, keycloakBase, realm, token, "tenant-admin", "tenant-user");
+await EnsureTenantClientScopeAsync(http, keycloakBase, realm, token);
 await EnsureAudienceClientScopeAsync(http, keycloakBase, realm, token, "raveisland-web");
 await EnsureProfileClientScopeAsync(http, keycloakBase, realm, token);
 await EnsureEmailClientScopeAsync(http, keycloakBase, realm, token);
@@ -94,6 +96,7 @@ await EnsureDefaultClientScopesAsync(
     "profile",
     "email",
     "roles",
+    "tenant",
     "web-origins",
     "acr",
     "role_list",
@@ -107,6 +110,7 @@ await EnsureClientDefaultScopesAsync(
     "profile",
     "email",
     "roles",
+    "tenant",
     "raveisland-audience");
 
 Console.WriteLine("Keycloak setup completed for user '{0}'.", adminUsername);
@@ -686,6 +690,72 @@ static async Task EnsureDefaultClientScopesAsync(
         throw new InvalidOperationException(
             $"Failed to add default client scope '{scopeName}': {(int)response.StatusCode} {body}");
     }
+}
+
+static async Task EnsureRealmRolesExistAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token,
+    params string[] roleNames)
+{
+    foreach (var roleName in roleNames)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{keycloakBase}/admin/realms/{realm}/roles/{roleName}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var existing = await SendAsync<RoleRepresentation>(http, request);
+        if (existing?.Name is not null)
+        {
+            continue;
+        }
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, $"{keycloakBase}/admin/realms/{realm}/roles")
+        {
+            Content = JsonContent.Create(new { name = roleName }),
+        };
+        createRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await http.SendAsync(createRequest);
+        if (response.IsSuccessStatusCode)
+        {
+            Console.WriteLine("Created realm role '{0}'.", roleName);
+        }
+    }
+}
+
+static async Task EnsureTenantClientScopeAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token)
+{
+    var scope = await EnsureClientScopeAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        "tenant",
+        includeInTokenScope: true,
+        displayOnConsent: false);
+
+    await EnsureProtocolMapperAsync(
+        http,
+        keycloakBase,
+        realm,
+        token,
+        scope.Id!,
+        "tenant_id",
+        new Dictionary<string, string>
+        {
+            ["user.attribute"] = "tenant_id",
+            ["claim.name"] = "tenant_id",
+            ["jsonType.label"] = "String",
+            ["id.token.claim"] = "true",
+            ["access.token.claim"] = "true",
+            ["userinfo.token.claim"] = "true",
+        },
+        "oidc-usermodel-attribute-mapper");
 }
 
 static async Task EnsureRealmRoleAsync(HttpClient http, string keycloakBase, string realm, string token, string userId, string roleName)

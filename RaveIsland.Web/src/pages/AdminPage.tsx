@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "react-oidc-context";
 import { Navigate } from "react-router-dom";
-import { Activity, Database, Eye } from "lucide-react";
+import { Activity, Building2, CalendarDays, Database, Eye, Users } from "lucide-react";
 import { useCurrentUser } from "../auth/CurrentUserContext";
+import { apiFetch, isPlatformAdmin, type AdminStats } from "../lib/api";
 import {
   Card,
   CardContent,
@@ -12,12 +13,6 @@ import {
 } from "../components/ui/card";
 import { Skeleton } from "../components/ui/skeleton";
 import { Badge } from "../components/ui/badge";
-
-type StatsResponse = {
-  viewCount: number;
-  itemCount: number;
-  cached: boolean;
-};
 
 function MetricCard({
   title,
@@ -48,27 +43,17 @@ export function AdminPage() {
   const auth = useAuth();
   const { profile, isLoading: isLoadingProfile } = useCurrentUser();
   const roles = profile?.roles ?? [];
-  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth.user?.access_token || !roles.includes("admin")) {
+    if (!auth.user?.access_token || !isPlatformAdmin(roles)) {
       return;
     }
 
     setIsLoading(true);
-    fetch("/api/admin/stats", {
-      headers: {
-        Authorization: `Bearer ${auth.user.access_token}`,
-      },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`API returned ${response.status}`);
-        }
-        return response.json() as Promise<StatsResponse>;
-      })
+    apiFetch<AdminStats>("/api/admin/stats", { token: auth.user.access_token })
       .then((data) => {
         setStats(data);
         setError(null);
@@ -88,7 +73,7 @@ export function AdminPage() {
     );
   }
 
-  if (!roles.includes("admin")) {
+  if (!isPlatformAdmin(roles)) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -98,7 +83,7 @@ export function AdminPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Analytics</h2>
           <p className="text-muted-foreground">
-            Admin-only metrics from Redis cache and PostgreSQL.
+            Platform-wide metrics across all tenants.
           </p>
         </div>
         <Badge variant="secondary" className="w-fit">
@@ -129,16 +114,34 @@ export function AdminPage() {
                 icon={Eye}
               />
               <MetricCard
-                title="Total items"
-                value={String(stats.itemCount)}
-                hint="Count from PostgreSQL"
-                icon={Database}
+                title="Total events"
+                value={String(stats.eventCount)}
+                hint="Events across all tenants"
+                icon={CalendarDays}
+              />
+              <MetricCard
+                title="Tenants"
+                value={String(stats.tenantCount)}
+                hint="Registered event providers"
+                icon={Building2}
+              />
+              <MetricCard
+                title="Active users"
+                value={String(stats.userCount)}
+                hint="Registered tenant members"
+                icon={Users}
+              />
+              <MetricCard
+                title="Pending invites"
+                value={String(stats.pendingInvites)}
+                hint="Invitations awaiting registration"
+                icon={Activity}
               />
               <MetricCard
                 title="Cache status"
                 value={stats.cached ? "Active" : "Disabled"}
                 hint="Distributed cache backing admin stats"
-                icon={Activity}
+                icon={Database}
               />
             </>
           )
@@ -149,8 +152,8 @@ export function AdminPage() {
         <CardHeader>
           <CardTitle>About these metrics</CardTitle>
           <CardDescription>
-            Each visit to this page calls `/api/admin/stats`, which increments a Redis counter and
-            returns the current item count from the database.
+            Each visit to this page calls `/api/admin/stats`, which aggregates cross-tenant data
+            from PostgreSQL and Redis.
           </CardDescription>
         </CardHeader>
       </Card>

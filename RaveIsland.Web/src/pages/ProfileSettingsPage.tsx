@@ -74,6 +74,12 @@ export function ProfileSettingsPage() {
                   )}
                 </dd>
               </div>
+              {profile.tenantName && (
+                <div className="sm:col-span-2">
+                  <dt className="text-sm text-muted-foreground">Tenant</dt>
+                  <dd className="mt-1 font-medium">{profile.tenantName}</dd>
+                </div>
+              )}
             </dl>
           )}
         </CardContent>

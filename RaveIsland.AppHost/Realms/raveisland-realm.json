@@ -15,12 +15,14 @@
     "roles",
     "web-origins",
     "acr",
+    "tenant",
     "raveisland-audience"
   ],
   "roles": {
     "realm": [
-      { "name": "admin", "description": "Administrator role" },
-      { "name": "user", "description": "Standard user role" }
+      { "name": "admin", "description": "Platform administrator" },
+      { "name": "tenant-admin", "description": "Tenant administrator" },
+      { "name": "tenant-user", "description": "Tenant user" }
     ]
   },
   "clients": [
@@ -48,7 +50,7 @@
       "attributes": { "pkce.code.challenge.method": "S256" },
       "redirectUris": ["http://localhost:5173/*"],
       "webOrigins": ["http://localhost:5173", "+"],
-      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email", "raveisland-audience"],
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email", "tenant", "raveisland-audience"],
       "optionalClientScopes": ["address", "phone", "offline_access", "microprofile-jwt"]
     }
   ],
@@ -151,6 +153,29 @@
           "config": {
             "user.attribute": "email",
             "claim.name": "email",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tenant",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",

@@ -1,0 +1,259 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json.Serialization;
+
+namespace RaveIsland.ApiService.Infrastructure.Identity;
+
+public interface IKeycloakAdminService
+{
+    Task<string> CreateUserAsync(
+        string email,
+        string firstName,
+        string lastName,
+        string password,
+        Guid tenantId,
+        string role,
+        CancellationToken cancellationToken = default);
+
+    Task SetUserEnabledAsync(string keycloakUserId, bool enabled, CancellationToken cancellationToken = default);
+
+    Task UpdateUserRoleAsync(string keycloakUserId, string newRole, CancellationToken cancellationToken = default);
+}
+
+public sealed class KeycloakAdminService(
+    IConfiguration configuration,
+    IHostEnvironment environment,
+    ILogger<KeycloakAdminService> logger) : IKeycloakAdminService
+{
+    private const string Realm = "raveisland";
+
+    public async Task<string> CreateUserAsync(
+        string email,
+        string firstName,
+        string lastName,
+        string password,
+        Guid tenantId,
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        var username = email;
+        var createPayload = new
+        {
+            username,
+            email,
+            firstName,
+            lastName,
+            enabled = true,
+            emailVerified = true,
+            attributes = new Dictionary<string, string[]>
+            {
+                ["tenant_id"] = [tenantId.ToString()],
+            },
+            credentials = new[]
+            {
+                new { type = "password", value = password, temporary = false },
+            },
+        };
+
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, $"{keycloakBase}/admin/realms/{Realm}/users")
+        {
+            Content = JsonContent.Create(createPayload),
+        };
+        createRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var createResponse = await http.SendAsync(createRequest, cancellationToken);
+        if (createResponse.StatusCode != HttpStatusCode.Created)
+        {
+            var body = await createResponse.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Failed to create Keycloak user: {(int)createResponse.StatusCode} {body}");
+        }
+
+        var location = createResponse.Headers.Location?.ToString();
+        var userId = location?.Split('/').LastOrDefault();
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            var users = await GetUsersByEmailAsync(http, keycloakBase, token, email, cancellationToken);
+            userId = users.FirstOrDefault()?.Id
+                ?? throw new InvalidOperationException("Created user but could not resolve user id.");
+        }
+
+        await AssignRealmRoleAsync(http, keycloakBase, token, userId, role, cancellationToken);
+        logger.LogInformation("Created Keycloak user {UserId} with role {Role}", userId, role);
+        return userId;
+    }
+
+    public async Task SetUserEnabledAsync(string keycloakUserId, bool enabled, CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"{keycloakBase}/admin/realms/{Realm}/users/{keycloakUserId}")
+        {
+            Content = JsonContent.Create(new { enabled }),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Failed to update user enabled state: {(int)response.StatusCode} {body}");
+        }
+    }
+
+    public async Task UpdateUserRoleAsync(string keycloakUserId, string newRole, CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        foreach (var roleToRemove in Common.AppRoles.TenantRoles)
+        {
+            await TryRemoveRealmRoleAsync(http, keycloakBase, token, keycloakUserId, roleToRemove, cancellationToken);
+        }
+
+        await AssignRealmRoleAsync(http, keycloakBase, token, keycloakUserId, newRole, cancellationToken);
+    }
+
+    private async Task<string> GetAdminTokenAsync(CancellationToken cancellationToken)
+    {
+        var adminPassword = configuration["KC_BOOTSTRAP_ADMIN_PASSWORD"]
+            ?? configuration["Parameters:keycloak-password"]
+            ?? throw new InvalidOperationException("Keycloak admin password not configured.");
+
+        var adminUsername = configuration["KC_BOOTSTRAP_ADMIN_USERNAME"] ?? "admin";
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        using var tokenContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = "admin-cli",
+            ["grant_type"] = "password",
+            ["username"] = adminUsername,
+            ["password"] = adminPassword,
+        });
+
+        using var tokenResponse = await http.PostAsync(
+            $"{keycloakBase}/realms/master/protocol/openid-connect/token",
+            tokenContent,
+            cancellationToken);
+
+        tokenResponse.EnsureSuccessStatusCode();
+        var tokenPayload = await tokenResponse.Content.ReadFromJsonAsync<TokenResponse>(cancellationToken)
+            ?? throw new InvalidOperationException("Empty token response from Keycloak.");
+
+        return tokenPayload.AccessToken
+            ?? throw new InvalidOperationException("Keycloak token response did not include an access token.");
+    }
+
+    private static async Task AssignRealmRoleAsync(
+        HttpClient http,
+        string keycloakBase,
+        string token,
+        string userId,
+        string roleName,
+        CancellationToken cancellationToken)
+    {
+        using var roleRequest = new HttpRequestMessage(HttpMethod.Get, $"{keycloakBase}/admin/realms/{Realm}/roles/{roleName}");
+        roleRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var role = await SendAsync<RoleRepresentation>(http, roleRequest, cancellationToken)
+            ?? throw new InvalidOperationException($"Realm role '{roleName}' was not found.");
+
+        using var mapRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{keycloakBase}/admin/realms/{Realm}/users/{userId}/role-mappings/realm")
+        {
+            Content = JsonContent.Create(new[] { role }),
+        };
+        mapRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await http.SendAsync(mapRequest, cancellationToken);
+        if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NoContent)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Failed to assign role '{roleName}': {(int)response.StatusCode} {body}");
+        }
+    }
+
+    private static async Task TryRemoveRealmRoleAsync(
+        HttpClient http,
+        string keycloakBase,
+        string token,
+        string userId,
+        string roleName,
+        CancellationToken cancellationToken)
+    {
+        using var roleRequest = new HttpRequestMessage(HttpMethod.Get, $"{keycloakBase}/admin/realms/{Realm}/roles/{roleName}");
+        roleRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var role = await SendAsync<RoleRepresentation>(http, roleRequest, cancellationToken);
+        if (role is null)
+        {
+            return;
+        }
+
+        using var mapRequest = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"{keycloakBase}/admin/realms/{Realm}/users/{userId}/role-mappings/realm")
+        {
+            Content = JsonContent.Create(new[] { role }),
+        };
+        mapRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        await http.SendAsync(mapRequest, cancellationToken);
+    }
+
+    private static async Task<UserRepresentation[]> GetUsersByEmailAsync(
+        HttpClient http,
+        string keycloakBase,
+        string token,
+        string email,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{keycloakBase}/admin/realms/{Realm}/users?email={Uri.EscapeDataString(email)}&exact=true");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        return await SendAsync<UserRepresentation[]>(http, request, cancellationToken) ?? [];
+    }
+
+    private static async Task<T?> SendAsync<T>(HttpClient http, HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var response = await http.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return default;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<T>(cancellationToken);
+    }
+
+    private sealed class TokenResponse
+    {
+        [JsonPropertyName("access_token")]
+        public string? AccessToken { get; set; }
+    }
+
+    private sealed class RoleRepresentation
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+    }
+
+    private sealed class UserRepresentation
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+    }
+}
