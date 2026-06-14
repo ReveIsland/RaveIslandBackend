@@ -1,8 +1,10 @@
-# Build outputs
+# Build outputs (lowercase publish/ only — do not use **/publish/; it ignores Features/Events/Publish on Windows)
 **/bin/
 **/obj/
 **/out/
-**/publish/
+**/bin/**/publish/
+**/obj/**/publish/
+**/out/**/publish/
 
 # IDE / OS
 .vs/
