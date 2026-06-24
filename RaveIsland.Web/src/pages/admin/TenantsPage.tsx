@@ -27,6 +27,7 @@ export function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [pendingPromotionCode, setPendingPromotionCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,10 +60,15 @@ export function TenantsPage() {
       await apiFetch("/api/tenants", {
         method: "POST",
         token,
-        body: JSON.stringify({ name, slug: slug || null }),
+        body: JSON.stringify({
+          name,
+          slug: slug || null,
+          pendingPromotionCode: pendingPromotionCode || null,
+        }),
       });
       setName("");
       setSlug("");
+      setPendingPromotionCode("");
       await loadTenants();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create tenant");
@@ -108,6 +114,17 @@ export function TenantsPage() {
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 placeholder="sunset-events"
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <label className="text-sm font-medium" htmlFor="tenant-promo">
+                Organizer promotion code (optional)
+              </label>
+              <Input
+                id="tenant-promo"
+                value={pendingPromotionCode}
+                onChange={(e) => setPendingPromotionCode(e.target.value)}
+                placeholder="ORG-LAUNCH20"
               />
             </div>
             <div className="sm:col-span-2">

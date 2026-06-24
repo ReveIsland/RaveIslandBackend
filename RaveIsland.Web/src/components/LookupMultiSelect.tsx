@@ -35,16 +35,28 @@ export function LookupMultiSelect({
         <p className="text-sm text-muted-foreground">Loading...</p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
-          {values.map((item) => (
-            <label key={item.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={selectedIds.includes(item.id)}
-                onChange={() => toggle(item.id)}
-              />
-              {item.name}
-            </label>
-          ))}
+          {values.map((item) => {
+            const selected = selectedIds.includes(item.id);
+            return (
+              <label
+                key={item.id}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all",
+                  selected
+                    ? "glass ring-1 ring-primary/30"
+                    : "glass-subtle hover:border-white/20",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-white/20 accent-primary"
+                  checked={selected}
+                  onChange={() => toggle(item.id)}
+                />
+                {item.name}
+              </label>
+            );
+          })}
         </div>
       )}
     </div>

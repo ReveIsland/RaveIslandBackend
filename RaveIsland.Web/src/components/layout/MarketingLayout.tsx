@@ -16,12 +16,14 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/80 backdrop-blur">
+    <div className="ambient-bg min-h-screen">
+      <header className="glass-strong sticky top-0 z-10 border-b border-border/60">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold">
-            <Waves className="h-5 w-5 text-primary" />
-            Rave Island
+          <Link to="/" className="group flex items-center gap-2.5 font-semibold">
+            <span className="gradient-primary flex h-9 w-9 items-center justify-center rounded-xl shadow-lg shadow-primary/30 transition-transform group-hover:scale-105">
+              <Waves className="h-4 w-4 text-primary-foreground" />
+            </span>
+            <span className="text-gradient text-lg font-bold tracking-tight">Rave Island</span>
           </Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -44,7 +46,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-10">{children}</main>
+      <main className="mx-auto max-w-5xl px-4 py-10 md:py-14">{children}</main>
     </div>
   );
 }

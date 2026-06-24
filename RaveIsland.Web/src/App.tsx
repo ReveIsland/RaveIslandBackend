@@ -10,6 +10,9 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { EventsPage } from "./pages/EventsPage";
 import { EventFormPage } from "./pages/EventFormPage";
 import { InviteAcceptPage } from "./pages/InviteAcceptPage";
+import { BillingWelcomePage } from "./pages/BillingWelcomePage";
+import { BillingSetupPage } from "./pages/BillingSetupPage";
+import { BillingSettingsPage } from "./pages/settings/BillingSettingsPage";
 import { LandingPage } from "./pages/LandingPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { TenantsPage } from "./pages/admin/TenantsPage";
@@ -34,10 +37,15 @@ export default function App() {
               }
             />
             <Route path="/invite/accept" element={<InviteAcceptPage />} />
+            <Route path="/billing/welcome" element={<BillingWelcomePage />} />
+            <Route path="/billing/setup" element={<BillingSetupPage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AdminLayout />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/profile" element={<ProfileSettingsPage />} />
+                <Route element={<RoleRoute anyOf={["admin", "tenant-admin"]} />}>
+                  <Route path="/settings/billing" element={<BillingSettingsPage />} />
+                </Route>
                 <Route path="/events" element={<EventsPage />} />
                 <Route path="/events/new" element={<EventFormPage />} />
                 <Route path="/events/:eventId/edit" element={<EventFormPage />} />

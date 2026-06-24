@@ -42,6 +42,9 @@ public sealed class CreateTenantEndpoint : IEndpoint
             Slug = slug,
             IsActive = true,
             CreatedAt = DateTimeOffset.UtcNow,
+            PendingPromotionCode = string.IsNullOrWhiteSpace(request.PendingPromotionCode)
+                ? null
+                : request.PendingPromotionCode.Trim(),
         };
 
         db.Tenants.Add(tenant);
@@ -54,6 +57,7 @@ public sealed class CreateTenantEndpoint : IEndpoint
             tenant.Slug,
             tenant.IsActive,
             tenant.CreatedAt,
+            tenant.PendingPromotionCode,
         });
     }
 
@@ -65,5 +69,5 @@ public sealed class CreateTenantEndpoint : IEndpoint
         return slug;
     }
 
-    public sealed record CreateTenantRequest(string Name, string? Slug);
+    public sealed record CreateTenantRequest(string Name, string? Slug, string? PendingPromotionCode);
 }

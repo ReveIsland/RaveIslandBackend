@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { apiFetch, type InvitationPreview } from "../lib/api";
+import { apiFetch, type InvitationPreview, type AcceptInvitationResponse } from "../lib/api";
 import { Button } from "../components/ui/button";
 import {
   Card,
@@ -43,10 +43,19 @@ export function InviteAcceptPage() {
     setIsSubmitting(true);
 
     try {
-      await apiFetch(`/api/invitations/${encodeURIComponent(token)}/accept`, {
-        method: "POST",
-        body: JSON.stringify({ password, confirmPassword }),
-      });
+      const result = await apiFetch<AcceptInvitationResponse>(
+        `/api/invitations/${encodeURIComponent(token)}/accept`,
+        {
+          method: "POST",
+          body: JSON.stringify({ password, confirmPassword }),
+        },
+      );
+
+      if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl;
+        return;
+      }
+
       setSuccess(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");

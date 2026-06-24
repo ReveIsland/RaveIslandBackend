@@ -685,11 +685,28 @@ namespace RaveIsland.ApiService.Infrastructure.Persistence.Migrations
                     b.ToTable("LookupValues");
                 });
 
+            modelBuilder.Entity("RaveIsland.ApiService.Infrastructure.Persistence.Entities.StripeWebhookEvent", b =>
+                {
+                    b.Property<string>("EventId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("EventId");
+
+                    b.ToTable("StripeWebhookEvents");
+                });
+
             modelBuilder.Entity("RaveIsland.ApiService.Infrastructure.Persistence.Entities.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("BillingSetupCompletedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -702,15 +719,37 @@ namespace RaveIsland.ApiService.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("PendingPromotionCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
+                    b.Property<string>("StripeCustomerId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("StripePriceId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("StripeSubscriptionId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("StripeSubscriptionStatus")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Slug")
                         .IsUnique();
+
+                    b.HasIndex("StripeCustomerId");
 
                     b.ToTable("Tenants");
                 });

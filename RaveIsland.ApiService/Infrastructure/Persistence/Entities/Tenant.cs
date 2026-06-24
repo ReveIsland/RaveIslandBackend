@@ -8,6 +8,13 @@ public class Tenant
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; }
 
+    public string? StripeCustomerId { get; set; }
+    public string? StripeSubscriptionId { get; set; }
+    public string? StripePriceId { get; set; }
+    public string? StripeSubscriptionStatus { get; set; }
+    public DateTimeOffset? BillingSetupCompletedAt { get; set; }
+    public string? PendingPromotionCode { get; set; }
+
     public ICollection<TenantMembership> Memberships { get; set; } = [];
     public ICollection<EventEntity> Events { get; set; } = [];
     public ICollection<UserInvitation> Invitations { get; set; } = [];

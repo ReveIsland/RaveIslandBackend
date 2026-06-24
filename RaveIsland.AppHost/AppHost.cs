@@ -3,6 +3,10 @@ var builder = DistributedApplication.CreateBuilder(args);
 var adminUserPassword = builder.AddParameter("admin-user-password", secret: true);
 var keycloakAdminPassword = builder.AddParameter("keycloak-password", secret: true);
 var smtpPassword = builder.AddParameter("smtp-password", secret: true);
+var stripeSecretKey = builder.AddParameter("stripe-secret-key", secret: true);
+var stripePublishableKey = builder.AddParameter("stripe-publishable-key", secret: true);
+var stripeWebhookSecret = builder.AddParameter("stripe-webhook-secret", secret: true);
+var stripeFreePriceId = builder.AddParameter("stripe-free-price-id");
 
 var keycloak = builder.AddKeycloak("keycloak", 8080, adminPassword: keycloakAdminPassword)
     .WithDataVolume()
@@ -46,6 +50,10 @@ var apiService = builder.AddProject<Projects.RaveIsland_ApiService>("apiservice"
     .WithEnvironment("Smtp__FromName", "Rave Island")
     .WithEnvironment("Smtp__EnableSsl", "false")
     .WithEnvironment("App__WebBaseUrl", "http://localhost:5173")
+    .WithEnvironment("Stripe__SecretKey", stripeSecretKey)
+    .WithEnvironment("Stripe__PublishableKey", stripePublishableKey)
+    .WithEnvironment("Stripe__WebhookSecret", stripeWebhookSecret)
+    .WithEnvironment("Stripe__FreePriceId", stripeFreePriceId)
     .WithHttpHealthCheck("/health");
 
 builder.AddViteApp("web", "../RaveIsland.Web")

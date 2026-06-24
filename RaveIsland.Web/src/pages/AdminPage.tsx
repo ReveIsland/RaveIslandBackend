@@ -13,31 +13,8 @@ import {
 } from "../components/ui/card";
 import { Skeleton } from "../components/ui/skeleton";
 import { Badge } from "../components/ui/badge";
-
-function MetricCard({
-  title,
-  value,
-  hint,
-  icon: Icon,
-}: {
-  title: string;
-  value: string;
-  hint: string;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      </CardContent>
-    </Card>
-  );
-}
+import { StatCard } from "../components/layout/StatCard";
+import { PageHeader } from "../components/layout/PageHeader";
 
 export function AdminPage() {
   const auth = useAuth();
@@ -79,17 +56,15 @@ export function AdminPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Analytics</h2>
-          <p className="text-muted-foreground">
-            Platform-wide metrics across all tenants.
-          </p>
-        </div>
-        <Badge variant="secondary" className="w-fit">
-          Admin access
-        </Badge>
-      </div>
+      <PageHeader
+        title="Analytics"
+        description="Platform-wide metrics across all tenants."
+        actions={
+          <Badge variant="secondary" className="w-fit">
+            Admin access
+          </Badge>
+        }
+      />
 
       {error && (
         <Card className="border-destructive/40">
@@ -107,41 +82,47 @@ export function AdminPage() {
         ) : (
           stats && (
             <>
-              <MetricCard
+              <StatCard
                 title="Page views"
                 value={String(stats.viewCount)}
-                hint="Incremented on each visit via Redis"
+                description="Incremented on each visit via Redis"
                 icon={Eye}
+                accent="violet"
               />
-              <MetricCard
+              <StatCard
                 title="Total events"
                 value={String(stats.eventCount)}
-                hint="Events across all tenants"
+                description="Events across all tenants"
                 icon={CalendarDays}
+                accent="primary"
               />
-              <MetricCard
+              <StatCard
                 title="Tenants"
                 value={String(stats.tenantCount)}
-                hint="Registered event providers"
+                description="Registered event providers"
                 icon={Building2}
+                accent="emerald"
               />
-              <MetricCard
+              <StatCard
                 title="Active users"
                 value={String(stats.userCount)}
-                hint="Registered tenant members"
+                description="Registered tenant members"
                 icon={Users}
+                accent="amber"
               />
-              <MetricCard
+              <StatCard
                 title="Pending invites"
                 value={String(stats.pendingInvites)}
-                hint="Invitations awaiting registration"
+                description="Invitations awaiting registration"
                 icon={Activity}
+                accent="rose"
               />
-              <MetricCard
+              <StatCard
                 title="Cache status"
                 value={stats.cached ? "Active" : "Disabled"}
-                hint="Distributed cache backing admin stats"
+                description="Distributed cache backing admin stats"
                 icon={Database}
+                accent="primary"
               />
             </>
           )

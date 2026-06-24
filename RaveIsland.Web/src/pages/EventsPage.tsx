@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
-import { Plus } from "lucide-react";
+import { CalendarDays, Plus } from "lucide-react";
 import { useCurrentUser } from "../auth/CurrentUserContext";
 import {
   apiFetch,
@@ -9,6 +9,7 @@ import {
   type EventItem,
 } from "../lib/api";
 import { Button, buttonVariants } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
 import {
   Card,
   CardContent,
@@ -25,7 +26,19 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { Skeleton } from "../components/ui/skeleton";
+import { PageHeader } from "../components/layout/PageHeader";
+import { EmptyState } from "../components/layout/EmptyState";
 import { cn } from "../lib/utils";
+
+function statusBadgeVariant(
+  status?: string | null,
+): "success" | "warning" | "secondary" | "destructive" | "outline" {
+  const normalized = status?.toLowerCase() ?? "";
+  if (normalized.includes("publish") || normalized.includes("live")) return "success";
+  if (normalized.includes("draft")) return "warning";
+  if (normalized.includes("cancel")) return "destructive";
+  return "secondary";
+}
 
 export function EventsPage() {
   const auth = useAuth();
@@ -72,93 +85,109 @@ export function EventsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Events</h2>
-          <p className="text-muted-foreground">
-            Create and manage events for your organization.
-          </p>
-        </div>
-        <Link to="/events/new" className={cn(buttonVariants())}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create event
-        </Link>
-      </div>
+      <PageHeader
+        title="Events"
+        description="Create and manage events for your organization."
+        actions={
+          <Link to="/events/new" className={cn(buttonVariants())}>
+            <Plus className="h-4 w-4" />
+            Create event
+          </Link>
+        }
+      />
 
       <Card>
         <CardHeader>
           <CardTitle>Your events</CardTitle>
           <CardDescription>
-            Select an event to edit or remove events you no longer need.
+            Select an event to edit, view stats, or remove events you no longer need.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
           {isLoading ? (
-            <Skeleton className="h-32 w-full" />
-          ) : events.length === 0 ? (
-            <div className="flex flex-col items-center gap-4 py-12 text-center">
-              <p className="text-sm text-muted-foreground">No events yet.</p>
-              <Link to="/events/new" className={cn(buttonVariants({ variant: "outline" }))}>
-                Create your first event
-              </Link>
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
             </div>
+          ) : events.length === 0 ? (
+            <EmptyState
+              icon={CalendarDays}
+              title="No events yet"
+              description="Create your first event to start managing tickets, check-in, and analytics."
+              action={
+                <Link to="/events/new" className={cn(buttonVariants({ variant: "outline" }))}>
+                  <Plus className="h-4 w-4" />
+                  Create your first event
+                </Link>
+              }
+            />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Category</TableHead>
-                  {admin && <TableHead>Tenant</TableHead>}
-                  <TableHead>Created by</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {events.map((eventItem) => (
-                  <TableRow key={eventItem.id}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{eventItem.title}</div>
-                        {eventItem.tagline && (
-                          <div className="text-xs text-muted-foreground">{eventItem.tagline}</div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{eventItem.eventStatusName ?? "—"}</TableCell>
-                    <TableCell>{eventItem.eventCategoryName ?? "—"}</TableCell>
-                    {admin && <TableCell>{eventItem.tenantName}</TableCell>}
-                    <TableCell>{eventItem.createdByName ?? "Unknown"}</TableCell>
-                    <TableCell>
-                      {new Date(eventItem.updatedAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="space-x-2">
-                      <Link
-                        to={`/events/${eventItem.id}/edit`}
-                        className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                      >
-                        Edit
-                      </Link>
-                      <Link
-                        to={`/events/${eventItem.id}/analytics`}
-                        className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-                      >
-                        Stats
-                      </Link>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void handleDelete(eventItem.id)}
-                      >
-                        Delete
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead>Title</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Category</TableHead>
+                    {admin && <TableHead>Tenant</TableHead>}
+                    <TableHead>Created by</TableHead>
+                    <TableHead>Updated</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {events.map((eventItem) => (
+                    <TableRow key={eventItem.id} className="group">
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{eventItem.title}</div>
+                          {eventItem.tagline && (
+                            <div className="text-xs text-muted-foreground">{eventItem.tagline}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusBadgeVariant(eventItem.eventStatusName)}>
+                          {eventItem.eventStatusName ?? "—"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{eventItem.eventCategoryName ?? "—"}</TableCell>
+                      {admin && <TableCell>{eventItem.tenantName}</TableCell>}
+                      <TableCell>{eventItem.createdByName ?? "Unknown"}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(eventItem.updatedAt).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1.5 opacity-90 transition-opacity group-hover:opacity-100">
+                          <Link
+                            to={`/events/${eventItem.id}/edit`}
+                            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                          >
+                            Edit
+                          </Link>
+                          <Link
+                            to={`/events/${eventItem.id}/analytics`}
+                            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                          >
+                            Stats
+                          </Link>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => void handleDelete(eventItem.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarDays,
   Database,
+  CreditCard,
   LayoutDashboard,
   Users,
   Waves,
@@ -42,6 +43,12 @@ const navItems: Array<{
     visible: (roles) => isPlatformAdmin(roles),
   },
   {
+    to: "/settings/billing",
+    label: "Billing",
+    icon: CreditCard,
+    visible: (roles) => isTenantAdmin(roles),
+  },
+  {
     to: "/admin/users",
     label: "Users",
     icon: Users,
@@ -58,6 +65,7 @@ const navItems: Array<{
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/profile": "Profile settings",
+  "/settings/billing": "Billing",
   "/events": "Events",
   "/events/new": "Create event",
   "/admin": "Analytics",
@@ -66,9 +74,9 @@ const pageTitles: Record<string, string> = {
   "/admin/users": "User management",
 };
 
-function resolvePageTitle(pathname: string): string {
+function resolvePageTitle(pathname: string): string | null {
   if (pathname.endsWith("/edit") && pathname.startsWith("/events/")) {
-    return "Edit event";
+    return null;
   }
   if (pathname.endsWith("/analytics") && pathname.startsWith("/events/")) {
     return "Event analytics";
@@ -93,10 +101,12 @@ function AdminLayoutShell() {
   const visibleNavItems = navItems.filter((item) => !item.visible || item.visible(roles));
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar md:flex md:flex-col">
-        <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-6">
-          <Waves className="h-5 w-5 text-primary" />
+    <div className="ambient-bg flex min-h-screen">
+      <aside className="glass-strong hidden w-64 shrink-0 border-r border-sidebar-border md:flex md:flex-col">
+        <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
+          <span className="gradient-primary flex h-9 w-9 items-center justify-center rounded-xl shadow-lg shadow-primary/30">
+            <Waves className="h-5 w-5 text-primary-foreground" />
+          </span>
           <div>
             <p className="text-sm font-semibold text-sidebar-foreground">Rave Island</p>
             <p className="text-xs text-muted-foreground">Admin Panel</p>
@@ -112,22 +122,29 @@ function AdminLayoutShell() {
                 to={item.to}
                 className={({ isActive }) =>
                   cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent/70",
+                      ? "glass bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-primary/25"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent/60",
                   )
                 }
               >
-                <Icon className="h-4 w-4" />
-                {item.label}
+                {({ isActive }) => (
+                  <>
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
+                    )}
+                    <Icon className={cn("h-4 w-4", isActive && "text-primary")} />
+                    {item.label}
+                  </>
+                )}
               </NavLink>
             );
           })}
         </nav>
 
         <div className="border-t border-sidebar-border p-4">
-          <div className="rounded-lg border border-sidebar-border bg-background/40 p-3">
+          <div className="glass-subtle rounded-xl p-3">
             <p className="truncate text-sm font-medium">{displayName}</p>
             {profile?.tenantName && (
               <p className="truncate text-xs text-muted-foreground">{profile.tenantName}</p>
@@ -150,10 +167,11 @@ function AdminLayoutShell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b border-border bg-background/90 px-4 backdrop-blur md:px-8">
+        <header className="glass-strong sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b border-border px-4 md:px-8">
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Overview</p>
-            <h1 className="text-lg font-semibold">{pageTitle}</h1>
+            {pageTitle && (
+              <h1 className="text-xl font-semibold tracking-tight">{pageTitle}</h1>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -162,7 +180,7 @@ function AdminLayoutShell() {
           </div>
         </header>
 
-        <div className="border-b border-border px-4 py-3 md:hidden">
+        <div className="glass-subtle border-b border-border px-4 py-3 md:hidden">
           <div className="flex gap-2 overflow-x-auto">
             {visibleNavItems.map((item) => (
               <NavLink
@@ -171,7 +189,7 @@ function AdminLayoutShell() {
                 className={({ isActive }) =>
                   cn(
                     "whitespace-nowrap rounded-md px-3 py-1.5 text-sm",
-                    isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                    isActive ? "gradient-primary text-primary-foreground" : "glass-subtle text-muted-foreground",
                   )
                 }
               >

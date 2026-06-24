@@ -281,6 +281,35 @@ export type InvitationPreview = {
   status: string;
 };
 
+export type AcceptInvitationResponse = {
+  message?: string;
+  requiresBillingSetup?: boolean;
+  checkoutUrl?: string;
+};
+
+export type BillingStatus = {
+  isConfigured: boolean;
+  billingSetupCompleted: boolean;
+  isSubscribed: boolean;
+  subscriptionStatus?: string | null;
+  priceId?: string | null;
+  planName?: string | null;
+  canPublish: boolean;
+  availablePublishCredits?: number | null;
+  hasUnlimitedPublishes: boolean;
+  activeFeatures: string[];
+};
+
+export type BillingPlan = {
+  priceId: string;
+  productId: string;
+  name?: string | null;
+  description?: string | null;
+  unitAmount?: number | null;
+  currency?: string | null;
+  interval?: string | null;
+};
+
 export function hasRole(roles: string[], role: string) {
   return roles.some((r) => r.toLowerCase() === role.toLowerCase());
 }

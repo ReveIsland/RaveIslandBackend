@@ -30,7 +30,7 @@ function applyTheme(resolved: "light" | "dark") {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     const stored = localStorage.getItem(storageKey);
-    return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+    return stored === "light" || stored === "dark" || stored === "system" ? stored : "dark";
   });
 
   const resolvedTheme = useMemo(() => {

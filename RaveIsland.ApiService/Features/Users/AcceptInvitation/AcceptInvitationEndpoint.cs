@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using RaveIsland.ApiService.Common;
+using RaveIsland.ApiService.Infrastructure.Billing;
 using RaveIsland.ApiService.Infrastructure.Identity;
 using RaveIsland.ApiService.Infrastructure.Persistence;
 using RaveIsland.ApiService.Infrastructure.Persistence.Entities;
@@ -43,6 +44,7 @@ public sealed class AcceptInvitationEndpoint : IEndpoint
         AcceptInvitationRequest request,
         AppDbContext db,
         IKeycloakAdminService keycloakAdmin,
+        IBillingSetupService billingSetupService,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Password) || request.Password != request.ConfirmPassword)
@@ -98,7 +100,16 @@ public sealed class AcceptInvitationEndpoint : IEndpoint
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new { message = "Registration complete. You can now sign in." });
+        var billingResult = await billingSetupService.SetupBillingAfterRegistrationAsync(
+            invitation,
+            cancellationToken);
+
+        return Results.Ok(new
+        {
+            message = billingResult.Message ?? "Registration complete. You can now sign in.",
+            requiresBillingSetup = billingResult.RequiresBillingSetup,
+            checkoutUrl = billingResult.CheckoutUrl,
+        });
     }
 
     private static async Task<UserInvitation?> FindValidInvitationAsync(

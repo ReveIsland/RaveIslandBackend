@@ -1,5 +1,13 @@
 import { Link } from "react-router-dom";
-import { Building2, CalendarDays, ShieldCheck, UserRound } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  CalendarDays,
+  Plus,
+  ShieldCheck,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { useCurrentUser } from "../auth/CurrentUserContext";
 import {
   Card,
@@ -10,71 +18,76 @@ import {
 } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
+import { StatCard } from "../components/layout/StatCard";
 import { isPlatformAdmin, isTenantAdmin, isTenantMember } from "../lib/api";
 import { cn } from "../lib/utils";
 
-function StatCard({
-  title,
-  value,
-  description,
-  icon: Icon,
-}: {
-  title: string;
-  value: string;
-  description: string;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
-  );
-}
+const quickActions = [
+  {
+    to: "/events",
+    label: "Manage events",
+    description: "View and edit your organization's events",
+    icon: CalendarDays,
+    visible: isTenantMember,
+  },
+  {
+    to: "/events/new",
+    label: "Create event",
+    description: "Start a new event from scratch",
+    icon: Plus,
+    visible: isTenantMember,
+  },
+  {
+    to: "/admin/users",
+    label: "Manage users",
+    description: "Invite team members and assign roles",
+    icon: Users,
+    visible: (roles: string[]) => isPlatformAdmin(roles) || isTenantAdmin(roles),
+  },
+  {
+    to: "/admin/tenants",
+    label: "Manage tenants",
+    description: "Platform-wide tenant administration",
+    icon: Building2,
+    visible: isPlatformAdmin,
+  },
+];
 
 export function DashboardPage() {
   const { profile, isLoading, error } = useCurrentUser();
   const roles = profile?.roles ?? [];
+  const visibleActions = quickActions.filter((action) => action.visible(roles));
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
-        <p className="text-muted-foreground">
-          Your multi-tenant event provider dashboard.
-        </p>
-      </div>
-
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Account"
           value={isLoading ? "—" : profile?.name?.split(" ")[0] ?? "Active"}
           description="Signed in via Keycloak OIDC"
           icon={UserRound}
+          accent="violet"
         />
         <StatCard
           title="Organization"
           value={isLoading ? "—" : profile?.tenantName ?? (isPlatformAdmin(roles) ? "Platform" : "—")}
           description="Your tenant context"
           icon={Building2}
+          accent="primary"
         />
         <StatCard
           title="Assigned roles"
           value={isLoading ? "—" : String(roles.length)}
           description="From Keycloak realm"
           icon={ShieldCheck}
+          accent="emerald"
         />
         <StatCard
           title="Events"
           value="Manage"
           description="Create and view tenant events"
           icon={CalendarDays}
+          accent="amber"
         />
       </div>
 
@@ -82,7 +95,7 @@ export function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Profile</CardTitle>
-            <CardDescription>Loaded from `/api/me`</CardDescription>
+            <CardDescription>Your account details from the API</CardDescription>
           </CardHeader>
           <CardContent>
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -133,46 +146,30 @@ export function DashboardPage() {
             <CardTitle>Quick actions</CardTitle>
             <CardDescription>Common tasks based on your role</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {isTenantMember(roles) && (
-              <>
+          <CardContent className="flex flex-col gap-2">
+            {visibleActions.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No actions available for your current role.
+              </p>
+            ) : (
+              visibleActions.map(({ to, label, description, icon: Icon }) => (
                 <Link
-                  to="/events"
+                  key={to}
+                  to={to}
                   className={cn(
-                    "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
+                    "group flex items-center gap-4 rounded-lg border border-border bg-card p-4 transition-all hover:border-primary/30 hover:bg-muted/50",
                   )}
                 >
-                  Manage events
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 transition-colors group-hover:bg-primary/15">
+                    <Icon className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{label}</p>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </Link>
-                <Link
-                  to="/events/new"
-                  className={cn(
-                    "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
-                  )}
-                >
-                  Create event
-                </Link>
-              </>
-            )}
-            {(isPlatformAdmin(roles) || isTenantAdmin(roles)) && (
-              <Link
-                to="/admin/users"
-                className={cn(
-                  "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
-                )}
-              >
-                Manage users
-              </Link>
-            )}
-            {isPlatformAdmin(roles) && (
-              <Link
-                to="/admin/tenants"
-                className={cn(
-                  "inline-flex h-10 items-center justify-start rounded-lg border border-border bg-card px-4 text-sm font-medium hover:bg-muted",
-                )}
-              >
-                Manage tenants
-              </Link>
+              ))
             )}
           </CardContent>
         </Card>

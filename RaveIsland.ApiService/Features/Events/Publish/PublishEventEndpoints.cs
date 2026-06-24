@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using RaveIsland.ApiService.Common;
+using RaveIsland.ApiService.Infrastructure.Billing;
 using RaveIsland.ApiService.Infrastructure.Lookups;
 using RaveIsland.ApiService.Infrastructure.Persistence;
 using RaveIsland.ApiService.Infrastructure.Tenancy;
@@ -37,6 +38,7 @@ public sealed class PublishEventEndpoint : IEndpoint
         AppDbContext db,
         ITenantContext tenantContext,
         IEventPublishValidator validator,
+        IStripeMeterService meterService,
         CancellationToken cancellationToken)
     {
         var eventEntity = await EventQueryHelper.FindEventAsync(db, tenantContext, eventId, cancellationToken);
@@ -44,16 +46,18 @@ public sealed class PublishEventEndpoint : IEndpoint
         var access = EventQueryHelper.CheckAccess(tenantContext, eventEntity);
         if (access is not null) return access;
 
-        var errors = await validator.ValidateAsync(eventEntity, cancellationToken);
-        if (errors.Count > 0)
-        {
-            return Results.BadRequest(new { error = "Event is not ready to publish.", errors });
-        }
-
         var publishedStatusId = await EventDefaults.GetPublishedStatusIdAsync(db, cancellationToken);
         if (!publishedStatusId.HasValue)
         {
             return Results.Problem("Published status lookup value is not seeded.");
+        }
+
+        var wasAlreadyPublished = eventEntity.EventStatusId == publishedStatusId.Value;
+
+        var errors = await validator.ValidateAsync(eventEntity, cancellationToken);
+        if (errors.Count > 0)
+        {
+            return Results.BadRequest(new { error = "Event is not ready to publish.", errors });
         }
 
         eventEntity.EventStatusId = publishedStatusId.Value;
@@ -64,6 +68,22 @@ public sealed class PublishEventEndpoint : IEndpoint
 
         eventEntity.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
+
+        if (!wasAlreadyPublished && !tenantContext.IsAdmin)
+        {
+            var tenant = await db.Tenants
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == eventEntity.TenantId, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(tenant?.StripeCustomerId))
+            {
+                await meterService.ReportEventPublishedAsync(
+                    tenant.StripeCustomerId,
+                    eventEntity.Id,
+                    cancellationToken);
+            }
+        }
 
         return Results.Ok(new
         {

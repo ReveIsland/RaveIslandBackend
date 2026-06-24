@@ -9,9 +9,11 @@ using RaveIsland.ApiService.Infrastructure.Persistence;
 using RaveIsland.ApiService.Features.Events.CheckIn;
 using RaveIsland.ApiService.Features.Events.Promos;
 using RaveIsland.ApiService.Features.Events.Publish;
+using RaveIsland.ApiService.Infrastructure.Billing;
 using RaveIsland.ApiService.Infrastructure.Lookups;
 using RaveIsland.ApiService.Infrastructure.Media;
 using RaveIsland.ApiService.Infrastructure.Tenancy;
+using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +28,7 @@ builder.AddNpgsqlDbContext<AppDbContext>("raveisland");
 
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
+builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection(StripeOptions.SectionName));
 
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<ITenantIdResolver, TenantIdResolver>();
@@ -34,10 +37,20 @@ builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<IKeycloakAdminService, KeycloakAdminService>();
 builder.Services.AddScoped<ILookupCacheService, LookupCacheService>();
 builder.Services.AddScoped<ILookupSeeder, LookupSeeder>();
-builder.Services.AddScoped<IEventPublishValidator, EventPublishValidator>();
+builder.Services.AddScoped<EventPublishValidator>();
+builder.Services.AddScoped<IEventPublishValidator, SubscriptionAwareEventPublishValidator>();
 builder.Services.AddScoped<IPromoValidationService, PromoValidationService>();
 builder.Services.AddSingleton<IQrTokenService, QrTokenService>();
 builder.Services.AddSingleton<IMediaStorageService, LocalMediaStorageService>();
+builder.Services.AddScoped<IStripeCustomerService, StripeCustomerService>();
+builder.Services.AddScoped<IStripeCheckoutService, StripeCheckoutService>();
+builder.Services.AddScoped<IStripePortalService, StripePortalService>();
+builder.Services.AddScoped<IStripeEntitlementService, StripeEntitlementService>();
+builder.Services.AddScoped<IStripeMeterService, StripeMeterService>();
+builder.Services.AddScoped<IStripeWebhookHandler, StripeWebhookHandler>();
+builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
+builder.Services.AddScoped<StripeBillingSyncService>();
+builder.Services.AddScoped<IBillingSetupService, BillingSetupService>();
 
 builder.Services.AddCors(options =>
 {
@@ -120,6 +133,12 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
+var stripeOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<StripeOptions>>().Value;
+if (stripeOptions.IsConfigured)
+{
+    StripeConfiguration.ApiKey = stripeOptions.SecretKey;
+}
+
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
@@ -130,6 +149,16 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler();
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/webhooks/stripe"))
+    {
+        context.Request.EnableBuffering();
+    }
+
+    await next();
+});
 
 if (app.Environment.IsDevelopment())
 {

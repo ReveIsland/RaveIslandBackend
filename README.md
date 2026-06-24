@@ -56,6 +56,16 @@ After startup, sign in with:
 
 The admin user has the `admin` role and can access `/admin` in the web app.
 
+## Stripe billing (organizers)
+
+Organizer subscriptions use Stripe. Before testing invite → billing flows:
+
+1. Follow [docs/STRIPE_SETUP.md](docs/STRIPE_SETUP.md) to configure Test mode products, meter, and webhooks.
+2. Set Aspire parameters: `stripe-secret-key`, `stripe-publishable-key`, `stripe-webhook-secret`, `stripe-free-price-id`.
+3. Forward webhooks locally: `stripe listen --forward-to http://localhost:<api-port>/api/webhooks/stripe`
+
+Tenant admins completing invitation registration are redirected to Stripe Checkout (Free plan). Publish limits and features are enforced via Stripe entitlements and credit grants.
+
 ## Projects
 
 | Project | Description |
