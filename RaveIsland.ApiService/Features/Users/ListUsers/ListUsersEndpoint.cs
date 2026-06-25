@@ -73,6 +73,30 @@ public sealed class ListUsersEndpoint : IEndpoint
                 .ToList();
         }
 
+        var keycloakProfiles = await keycloakAdmin.GetUsersByIdsAsync(
+            memberships.Select(m => m.keycloakUserId),
+            cancellationToken);
+
+        var members = memberships.Select(m =>
+        {
+            keycloakProfiles.TryGetValue(m.keycloakUserId, out var profile);
+            return new
+            {
+                m.id,
+                m.type,
+                m.TenantId,
+                m.tenantName,
+                m.keycloakUserId,
+                email = profile?.Email,
+                firstName = profile?.FirstName,
+                lastName = profile?.LastName,
+                m.Role,
+                m.IsActive,
+                m.status,
+                m.CreatedAt,
+            };
+        }).ToList();
+
         var invitationsQuery = db.UserInvitations
             .IgnoreQueryFilters()
             .AsNoTracking()
@@ -106,6 +130,6 @@ public sealed class ListUsersEndpoint : IEndpoint
             })
             .ToListAsync(cancellationToken);
 
-        return Results.Ok(new { members = memberships, invitations });
+        return Results.Ok(new { members, invitations });
     }
 }

@@ -43,11 +43,30 @@ Under **Product catalog → Features**, create:
 
 Attach features to each product in the Dashboard.
 
-## 4. Credit grants (free tier)
+## 4. Free-tier publish fee (one-time per event)
 
-Free-tier publish limits are granted by the API on first billing setup (1 credit against the `events_published` meter). Paid tiers can receive larger grants via Stripe subscription benefits or recurring credit grants configured in the Dashboard.
+Free-plan organizers pay a **one-time fee each time they publish an event**. Paid plans (Starter, Pro, etc.) are exempt.
 
-## 5. Coupons (organizers)
+Configure in `appsettings.json` or Aspire parameters:
+
+```json
+"Stripe": {
+  "FreeTierPublishFeeAmountCents": 1000,
+  "FreeTierPublishFeeCurrency": "usd",
+  "FreeTierPublishFeePriceId": ""
+}
+```
+
+- `FreeTierPublishFeeAmountCents`: fee in cents (default `1000` = $10.00)
+- `FreeTierPublishFeePriceId`: optional Stripe **one-time** Price ID (`price_...`). If empty, the API creates checkout line items via `price_data`.
+
+Optional: create a **Product** "Event publish fee" with a one-time $10 price and copy its Price ID into `FreeTierPublishFeePriceId`.
+
+## 5. Credit grants (paid tiers)
+
+Free-tier publish limits are no longer credit-based. Paid tiers can receive publish credits via Stripe subscription benefits or recurring credit grants configured in the Dashboard.
+
+## 6. Coupons (organizers)
 
 Create coupons for organizers, e.g.:
 
@@ -58,7 +77,7 @@ Create coupons for organizers, e.g.:
 
 Enable **Promotion codes** for each coupon.
 
-## 6. Coupons (ticket buyers — future)
+## 7. Coupons (ticket buyers — future)
 
 Create separate consumer coupons for Phase 6 ticket checkout:
 
@@ -67,7 +86,7 @@ Create separate consumer coupons for Phase 6 ticket checkout:
 | MOBILE-FIRST10  | 10% off  | `segment=consumer`   |
 | EARLYBIRD       | Fixed    | `segment=consumer`   |
 
-## 7. Customer Portal
+## 8. Customer Portal
 
 **Settings → Billing → Customer portal**
 
@@ -76,7 +95,7 @@ Create separate consumer coupons for Phase 6 ticket checkout:
 - Invoice history
 - Default return URL: `http://localhost:5173/settings/billing`
 
-## 8. Webhooks
+## 9. Webhooks
 
 **Developers → Webhooks → Add endpoint**
 

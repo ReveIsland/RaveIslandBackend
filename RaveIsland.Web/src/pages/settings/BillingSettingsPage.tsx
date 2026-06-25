@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "react-oidc-context";
 import { useSearchParams } from "react-router-dom";
+import { useCurrentUser } from "../../auth/CurrentUserContext";
 import { apiFetch, type BillingPlan, type BillingStatus } from "../../lib/api";
 import { Button } from "../../components/ui/button";
 import {
@@ -14,6 +15,7 @@ import { Badge } from "../../components/ui/badge";
 
 export function BillingSettingsPage() {
   const auth = useAuth();
+  const { refresh: refreshProfile } = useCurrentUser();
   const token = auth.user?.access_token;
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<BillingStatus | null>(null);
@@ -54,9 +56,10 @@ export function BillingSettingsPage() {
       body: JSON.stringify({ sessionId }),
     })
       .finally(() => {
+        refreshProfile();
         void load();
       });
-  }, [checkoutResult, sessionId, load]);
+  }, [checkoutResult, sessionId, load, refreshProfile]);
 
   function resolvePlanLabel(status: BillingStatus, billingPlans: BillingPlan[]) {
     if (status.planName) {

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using RaveIsland.ApiService.Common;
+using RaveIsland.ApiService.Infrastructure.Billing;
 using RaveIsland.ApiService.Infrastructure.Identity;
 using RaveIsland.ApiService.Infrastructure.Persistence;
 
@@ -21,6 +22,7 @@ public sealed class GetMeEndpoint : IEndpoint
         IHostEnvironment environment,
         ITenantIdResolver tenantIdResolver,
         ITenantMembershipResolver tenantMembershipResolver,
+        IStripeEntitlementService billingService,
         CancellationToken cancellationToken)
     {
         if (user.Identity?.IsAuthenticated != true)
@@ -48,6 +50,25 @@ public sealed class GetMeEndpoint : IEndpoint
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
+        object? organizationSubscription = null;
+        var roles = KeycloakClaims.GetRoles(user);
+        var isOrgMember = roles.Contains(AppRoles.TenantAdmin, StringComparer.OrdinalIgnoreCase)
+            || roles.Contains(AppRoles.TenantUser, StringComparer.OrdinalIgnoreCase);
+
+        if (tenantId.HasValue && isOrgMember)
+        {
+            var billing = await billingService.GetCachedBillingStatusAsync(tenantId.Value, cancellationToken);
+            var planName = billing.PlanName
+                ?? (billing.IsSubscribed ? "Subscribed" : billing.BillingSetupCompleted ? "Active" : null);
+
+            organizationSubscription = new
+            {
+                planName,
+                status = billing.SubscriptionStatus,
+                isSubscribed = billing.IsSubscribed,
+            };
+        }
+
         return Results.Ok(new
         {
             name = profile.Name,
@@ -55,6 +76,7 @@ public sealed class GetMeEndpoint : IEndpoint
             roles = profile.Roles,
             tenantId,
             tenantName,
+            organizationSubscription,
         });
     }
 }

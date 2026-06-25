@@ -147,6 +147,11 @@ export function UsersPage() {
     }
   }
 
+  function memberDisplayName(member: UserMember) {
+    const name = [member.firstName, member.lastName].filter(Boolean).join(" ").trim();
+    return name || member.email || member.keycloakUserId;
+  }
+
   return (
     <div className="space-y-8">
       <div>
@@ -270,7 +275,12 @@ export function UsersPage() {
               <TableBody>
                 {users?.members.map((member) => (
                   <TableRow key={member.id}>
-                    <TableCell>{member.keycloakUserId.slice(0, 8)}...</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{memberDisplayName(member)}</div>
+                      {member.email && memberDisplayName(member) !== member.email && (
+                        <div className="text-xs text-muted-foreground">{member.email}</div>
+                      )}
+                    </TableCell>
                     <TableCell>{member.tenantName}</TableCell>
                     <TableCell>{member.role}</TableCell>
                     <TableCell>

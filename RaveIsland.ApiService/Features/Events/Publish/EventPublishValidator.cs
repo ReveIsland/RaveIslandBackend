@@ -45,7 +45,9 @@ public sealed class EventPublishValidator(AppDbContext db) : IEventPublishValida
             errors.Add("Venue information is required.");
         }
 
-        var hasCover = await db.EventMedia.AnyAsync(
+        var hasCover = await db.EventMedia
+            .IgnoreQueryFilters()
+            .AnyAsync(
             m => m.EventId == eventEntity.Id && m.MediaType == EventMediaType.Cover,
             cancellationToken);
         if (!hasCover)

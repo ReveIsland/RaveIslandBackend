@@ -26,7 +26,13 @@ public interface IStripeEntitlementService
 {
     Task<BillingStatus> GetBillingStatusAsync(Guid tenantId, CancellationToken cancellationToken = default);
 
+    Task<BillingStatus> GetCachedBillingStatusAsync(Guid tenantId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<string>> ValidateCanPublishAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> IsFreeTierTenantAsync(
         Guid tenantId,
         CancellationToken cancellationToken = default);
 
@@ -47,9 +53,21 @@ public sealed class StripeEntitlementService(
         "trialing",
     ];
 
-    public async Task<BillingStatus> GetBillingStatusAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    public Task<BillingStatus> GetBillingStatusAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+        BuildBillingStatusAsync(tenantId, refreshCache: true, cancellationToken);
+
+    public Task<BillingStatus> GetCachedBillingStatusAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
+        BuildBillingStatusAsync(tenantId, refreshCache: false, cancellationToken);
+
+    private async Task<BillingStatus> BuildBillingStatusAsync(
+        Guid tenantId,
+        bool refreshCache,
+        CancellationToken cancellationToken)
     {
-        await billingSync.RefreshTenantBillingCacheAsync(tenantId, cancellationToken);
+        if (refreshCache)
+        {
+            await billingSync.RefreshTenantBillingCacheAsync(tenantId, cancellationToken);
+        }
 
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
@@ -75,7 +93,7 @@ public sealed class StripeEntitlementService(
         var hasUnlimited = await HasUnlimitedPublishesAsync(tenant, cancellationToken);
         var credits = await GetAvailableCreditsAsync(tenant.StripeCustomerId, cancellationToken);
         var features = await GetActiveFeaturesAsync(tenant.StripeCustomerId, cancellationToken);
-        var canPublish = CanPublish(tenant, hasUnlimited, credits);
+        var canPublish = CanPublish(tenant, hasUnlimited, credits, options.Value.FreePriceId);
         var isSubscribed = tenant.BillingSetupCompletedAt.HasValue &&
                            ActiveSubscriptionStatuses.Contains(tenant.StripeSubscriptionStatus ?? string.Empty);
         var planName = await ResolvePlanNameAsync(tenant.StripePriceId, cancellationToken)
@@ -131,6 +149,11 @@ public sealed class StripeEntitlementService(
             return ["Your subscription is not active. Update billing to publish events."];
         }
 
+        if (IsFreeTierPriceId(tenant.StripePriceId, options.Value.FreePriceId))
+        {
+            return [];
+        }
+
         var hasUnlimited = await HasUnlimitedPublishesAsync(tenant, cancellationToken);
         if (hasUnlimited)
         {
@@ -144,6 +167,18 @@ public sealed class StripeEntitlementService(
         }
 
         return [];
+    }
+
+    public async Task<bool> IsFreeTierTenantAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        var tenant = await db.Tenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+        return tenant is not null && IsFreeTierPriceId(tenant.StripePriceId, options.Value.FreePriceId);
     }
 
     public async Task<bool> HasFeatureAsync(
@@ -170,7 +205,7 @@ public sealed class StripeEntitlementService(
         return features.Contains(featureLookupKey, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static bool CanPublish(Tenant tenant, bool hasUnlimited, decimal? credits)
+    private static bool CanPublish(Tenant tenant, bool hasUnlimited, decimal? credits, string freePriceId)
     {
         if (!tenant.BillingSetupCompletedAt.HasValue || string.IsNullOrWhiteSpace(tenant.StripeCustomerId))
         {
@@ -183,8 +218,17 @@ public sealed class StripeEntitlementService(
             return false;
         }
 
+        if (IsFreeTierPriceId(tenant.StripePriceId, freePriceId))
+        {
+            return true;
+        }
+
         return hasUnlimited || credits is > 0;
     }
+
+    private static bool IsFreeTierPriceId(string? priceId, string freePriceId) =>
+        !string.IsNullOrWhiteSpace(priceId) &&
+        string.Equals(priceId, freePriceId, StringComparison.Ordinal);
 
     private async Task<bool> HasUnlimitedPublishesAsync(Tenant tenant, CancellationToken cancellationToken)
     {

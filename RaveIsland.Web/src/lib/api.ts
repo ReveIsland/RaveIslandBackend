@@ -213,7 +213,32 @@ export type EventAnalytics = {
 export type PublishReadiness = {
   isReady: boolean;
   errors: string[];
+  publishPayment?: {
+    required: boolean;
+    alreadyPaid: boolean;
+    amountCents: number;
+    currency: string;
+  };
 };
+
+export type PublishEventResponse = {
+  id?: string;
+  slug?: string;
+  publicUrl?: string;
+  published?: boolean;
+  requiresPublishPayment?: boolean;
+  checkoutUrl?: string;
+  amountCents?: number;
+  currency?: string;
+};
+
+export function resolveMediaUrl(storageUrl: string): string {
+  return storageUrl;
+}
+
+export async function apiDelete(path: string, token?: string): Promise<void> {
+  await apiFetch<void>(path, { method: "DELETE", token });
+}
 
 export async function apiUpload<T>(
   path: string,
@@ -239,6 +264,9 @@ export type UserMember = {
   tenantId: string;
   tenantName: string;
   keycloakUserId: string;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   role: string;
   isActive: boolean;
   status: string;

@@ -54,7 +54,12 @@ var apiService = builder.AddProject<Projects.RaveIsland_ApiService>("apiservice"
     .WithEnvironment("Stripe__PublishableKey", stripePublishableKey)
     .WithEnvironment("Stripe__WebhookSecret", stripeWebhookSecret)
     .WithEnvironment("Stripe__FreePriceId", stripeFreePriceId)
-    .WithHttpHealthCheck("/health");
+    .WithHttpHealthCheck("/health")
+    .WithUrlForEndpoint("https", url =>
+    {
+        url.DisplayText = "Scalar API";
+        url.Url = "/scalar/v1";
+    });
 
 builder.AddViteApp("web", "../RaveIsland.Web")
     .WithReference(apiService)

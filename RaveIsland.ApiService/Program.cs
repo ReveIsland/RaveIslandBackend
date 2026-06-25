@@ -13,6 +13,7 @@ using RaveIsland.ApiService.Infrastructure.Billing;
 using RaveIsland.ApiService.Infrastructure.Lookups;
 using RaveIsland.ApiService.Infrastructure.Media;
 using RaveIsland.ApiService.Infrastructure.Tenancy;
+using Scalar.AspNetCore;
 using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,8 +21,28 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 builder.Services.AddProblemDetails();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info.Title = "Rave Island API";
+        document.Info.Version = "v1";
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddHttpContextAccessor();
+
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 20 * 1024 * 1024;
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
+});
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 20 * 1024 * 1024;
+});
 
 builder.AddRedisDistributedCache("cache");
 builder.AddNpgsqlDbContext<AppDbContext>("raveisland");
@@ -51,6 +72,8 @@ builder.Services.AddScoped<IStripeWebhookHandler, StripeWebhookHandler>();
 builder.Services.AddScoped<IStripeBillingSyncService, StripeBillingSyncService>();
 builder.Services.AddScoped<StripeBillingSyncService>();
 builder.Services.AddScoped<IBillingSetupService, BillingSetupService>();
+builder.Services.AddScoped<IEventPublishService, EventPublishService>();
+builder.Services.AddScoped<IEventPublishPaymentService, EventPublishPaymentService>();
 
 builder.Services.AddCors(options =>
 {
@@ -163,6 +186,10 @@ app.Use(async (context, next) =>
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.WithTitle("Rave Island API");
+    });
 }
 
 app.UseCors("WebDev");

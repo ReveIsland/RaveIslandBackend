@@ -25,7 +25,17 @@ public interface IKeycloakAdminService
     Task SetTenantAttributeAsync(string keycloakUserId, Guid tenantId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlySet<string>> GetPlatformAdminUserIdsAsync(CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyDictionary<string, KeycloakUserProfile>> GetUsersByIdsAsync(
+        IEnumerable<string> keycloakUserIds,
+        CancellationToken cancellationToken = default);
 }
+
+public sealed record KeycloakUserProfile(
+    string Id,
+    string? Email,
+    string? FirstName,
+    string? LastName);
 
 public sealed class KeycloakAdminService(
     IConfiguration configuration,
@@ -56,6 +66,7 @@ public sealed class KeycloakAdminService(
             lastName,
             enabled = true,
             emailVerified = true,
+            requiredActions = Array.Empty<string>(),
             attributes = new Dictionary<string, string[]>
             {
                 ["tenant_id"] = [tenantId.ToString()],
@@ -99,18 +110,11 @@ public sealed class KeycloakAdminService(
         var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
         using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
 
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"{keycloakBase}/admin/realms/{Realm}/users/{keycloakUserId}")
-        {
-            Content = JsonContent.Create(new { enabled }),
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var user = await GetUserForUpdateAsync(http, keycloakBase, token, keycloakUserId, cancellationToken)
+            ?? throw new InvalidOperationException($"Keycloak user '{keycloakUserId}' was not found.");
 
-        var response = await http.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException($"Failed to update user enabled state: {(int)response.StatusCode} {body}");
-        }
+        user.Enabled = enabled;
+        await PutUserAsync(http, keycloakBase, token, keycloakUserId, user, cancellationToken);
     }
 
     public async Task UpdateUserRoleAsync(string keycloakUserId, string newRole, CancellationToken cancellationToken = default)
@@ -146,32 +150,22 @@ public sealed class KeycloakAdminService(
         var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
         using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Put,
-            $"{keycloakBase}/admin/realms/{Realm}/users/{keycloakUserId}")
+        var user = await GetUserForUpdateAsync(http, keycloakBase, token, keycloakUserId, cancellationToken);
+        if (user is null)
         {
-            Content = JsonContent.Create(new
-            {
-                attributes = new Dictionary<string, string[]>
-                {
-                    ["tenant_id"] = [tenantId.ToString()],
-                },
-            }),
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        var response = await http.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            logger.LogWarning(
-                "Failed to set tenant_id attribute for user {UserId}: {Status} {Body}",
-                keycloakUserId,
-                (int)response.StatusCode,
-                body);
+            logger.LogWarning("Keycloak user {UserId} was not found while syncing tenant_id.", keycloakUserId);
             return;
         }
 
+        user.Attributes ??= new Dictionary<string, string[]>();
+        if (user.Attributes.TryGetValue("tenant_id", out var existing) &&
+            existing.Any(value => string.Equals(value, tenantId.ToString(), StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        user.Attributes["tenant_id"] = [tenantId.ToString()];
+        await PutUserAsync(http, keycloakBase, token, keycloakUserId, user, cancellationToken);
         logger.LogInformation("Set tenant_id attribute for Keycloak user {UserId}", keycloakUserId);
     }
 
@@ -191,6 +185,37 @@ public sealed class KeycloakAdminService(
             .Where(u => !string.IsNullOrWhiteSpace(u.Id))
             .Select(u => u.Id!)
             .ToHashSet(StringComparer.Ordinal);
+    }
+
+    public async Task<IReadOnlyDictionary<string, KeycloakUserProfile>> GetUsersByIdsAsync(
+        IEnumerable<string> keycloakUserIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = keycloakUserIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (ids.Count == 0)
+        {
+            return new Dictionary<string, KeycloakUserProfile>(StringComparer.Ordinal);
+        }
+
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var keycloakBase = KeycloakClaims.ResolveKeycloakBase(configuration, environment);
+        using var http = KeycloakClaims.CreateKeycloakHttpClient(environment);
+
+        var profiles = await Task.WhenAll(ids.Select(async id =>
+        {
+            var user = await GetUserForUpdateAsync(http, keycloakBase, token, id, cancellationToken);
+            return user is null
+                ? null
+                : new KeycloakUserProfile(id, user.Email, user.FirstName, user.LastName);
+        }));
+
+        return profiles
+            .Where(profile => profile is not null)
+            .ToDictionary(profile => profile!.Id, profile => profile!, StringComparer.Ordinal);
     }
 
     private async Task<string> GetAdminTokenAsync(CancellationToken cancellationToken)
@@ -281,6 +306,43 @@ public sealed class KeycloakAdminService(
         await http.SendAsync(mapRequest, cancellationToken);
     }
 
+    private static async Task<UserUpdateRepresentation?> GetUserForUpdateAsync(
+        HttpClient http,
+        string keycloakBase,
+        string token,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{keycloakBase}/admin/realms/{Realm}/users/{userId}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        return await SendAsync<UserUpdateRepresentation>(http, request, cancellationToken);
+    }
+
+    private static async Task PutUserAsync(
+        HttpClient http,
+        string keycloakBase,
+        string token,
+        string userId,
+        UserUpdateRepresentation user,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"{keycloakBase}/admin/realms/{Realm}/users/{userId}")
+        {
+            Content = JsonContent.Create(user),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Failed to update Keycloak user {userId}: {(int)response.StatusCode} {body}");
+        }
+    }
+
     private static async Task<UserRepresentation[]> GetUsersByEmailAsync(
         HttpClient http,
         string keycloakBase,
@@ -321,6 +383,33 @@ public sealed class KeycloakAdminService(
 
         [JsonPropertyName("name")]
         public string? Name { get; set; }
+    }
+
+    private sealed class UserUpdateRepresentation
+    {
+        [JsonPropertyName("username")]
+        public string? Username { get; set; }
+
+        [JsonPropertyName("email")]
+        public string? Email { get; set; }
+
+        [JsonPropertyName("firstName")]
+        public string? FirstName { get; set; }
+
+        [JsonPropertyName("lastName")]
+        public string? LastName { get; set; }
+
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = true;
+
+        [JsonPropertyName("emailVerified")]
+        public bool EmailVerified { get; set; }
+
+        [JsonPropertyName("attributes")]
+        public Dictionary<string, string[]>? Attributes { get; set; }
+
+        [JsonPropertyName("requiredActions")]
+        public string[] RequiredActions { get; set; } = [];
     }
 
     private sealed class UserRepresentation

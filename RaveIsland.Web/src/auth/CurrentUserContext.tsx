@@ -1,13 +1,21 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useAuth } from "react-oidc-context";
 import { apiFetch } from "../lib/api";
+
+export type OrganizationSubscription = {
+  planName: string | null;
+  status: string | null;
+  isSubscribed: boolean;
+};
 
 export type CurrentUserProfile = {
   name: string;
@@ -15,6 +23,7 @@ export type CurrentUserProfile = {
   roles: string[];
   tenantId: string | null;
   tenantName: string | null;
+  organizationSubscription: OrganizationSubscription | null;
 };
 
 type CurrentUserContextValue = {
@@ -32,6 +41,7 @@ type MeResponse = {
   roles?: string[];
   tenantId?: string | null;
   tenantName?: string | null;
+  organizationSubscription?: OrganizationSubscription | null;
 };
 
 export function CurrentUserProvider({ children }: { children: ReactNode }) {
@@ -40,10 +50,13 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const hasLoadedRef = useRef(false);
+  const refresh = useCallback(() => setRefreshKey((current) => current + 1), []);
 
   useEffect(() => {
     const token = auth.user?.access_token;
     if (!token) {
+      hasLoadedRef.current = false;
       setProfile(null);
       setIsLoading(false);
       setError(null);
@@ -51,7 +64,9 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    setIsLoading(true);
+    if (!hasLoadedRef.current) {
+      setIsLoading(true);
+    }
     setError(null);
 
     apiFetch<MeResponse>("/api/me", { token })
@@ -73,6 +88,7 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
           roles: data.roles ?? [],
           tenantId: data.tenantId ?? null,
           tenantName: data.tenantName ?? null,
+          organizationSubscription: data.organizationSubscription ?? null,
         });
       })
       .catch((err: unknown) => {
@@ -85,6 +101,7 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         if (!cancelled) {
+          hasLoadedRef.current = true;
           setIsLoading(false);
         }
       });
@@ -99,9 +116,9 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
       profile,
       isLoading,
       error,
-      refresh: () => setRefreshKey((current) => current + 1),
+      refresh,
     }),
-    [profile, isLoading, error],
+    [profile, isLoading, error, refresh],
   );
 
   return <CurrentUserContext.Provider value={value}>{children}</CurrentUserContext.Provider>;

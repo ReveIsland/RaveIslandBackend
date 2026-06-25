@@ -28,6 +28,7 @@ public class AppDbContext(
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<CheckInLog> CheckInLogs => Set<CheckInLog>();
     public DbSet<StripeWebhookEvent> StripeWebhookEvents => Set<StripeWebhookEvent>();
+    public DbSet<EventPublishPayment> EventPublishPayments => Set<EventPublishPayment>();
 
     private bool BypassTenantFilters
     {
@@ -184,6 +185,7 @@ public class AppDbContext(
             entity.Property(e => e.FileName).HasMaxLength(512).IsRequired();
             entity.HasIndex(e => e.EventId);
             entity.HasOne(e => e.Event).WithMany(ev => ev.Media).HasForeignKey(e => e.EventId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasQueryFilter(m => BypassTenantFilters || m.Event.TenantId == CurrentTenantId);
         });
 
         modelBuilder.Entity<Artist>(entity =>
@@ -269,6 +271,16 @@ public class AppDbContext(
         {
             entity.HasKey(e => e.EventId);
             entity.Property(e => e.EventId).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<EventPublishPayment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.StripeCheckoutSessionId).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(32).IsRequired();
+            entity.HasIndex(e => e.EventId);
+            entity.HasIndex(e => e.StripeCheckoutSessionId);
+            entity.HasOne(e => e.Event).WithMany().HasForeignKey(e => e.EventId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -1,29 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
 import { ArrowLeft, CheckCircle2, Plus, AlertCircle } from "lucide-react";
 import { useCurrentUser } from "../auth/CurrentUserContext";
 import { LookupSelect } from "../components/LookupSelect";
 import { LookupMultiSelect } from "../components/LookupMultiSelect";
 import { EventEditorHeader } from "../components/events/EventEditorHeader";
+import { EventMediaPanel } from "../components/events/EventMediaPanel";
 import {
   EventFormNav,
   EventFormNavMobile,
   getTabConfig,
+  EVENT_TABS,
   type EventTab,
 } from "../components/events/EventFormNav";
 import { FormField, FormSection } from "../components/layout/FormField";
 import { PageHeader } from "../components/layout/PageHeader";
 import {
   apiFetch,
-  apiUpload,
   isPlatformAdmin,
   type ArtistItem,
   type EventItem,
   type EventScheduleItem,
   type EventTicketTypeItem,
   type EventPromoCodeItem,
+  type EventMediaItem,
   type PublishReadiness,
+  type PublishEventResponse,
   type Tenant,
 } from "../lib/api";
 import { useLookupValues } from "../hooks/useLookupValues";
@@ -47,6 +50,7 @@ const textareaClass = cn(selectClass, "min-h-28 resize-y py-2.5 leading-relaxed"
 
 export function EventFormPage() {
   const { eventId } = useParams<{ eventId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isEdit = Boolean(eventId);
   const navigate = useNavigate();
   const auth = useAuth();
@@ -56,6 +60,8 @@ export function EventFormPage() {
   const admin = isPlatformAdmin(roles);
 
   const [activeTab, setActiveTab] = useState<EventTab>("basic");
+  const [isConfirmingPublishPayment, setIsConfirmingPublishPayment] = useState(false);
+  const publishPaymentConfirmStarted = useRef(false);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [artists, setArtists] = useState<ArtistItem[]>([]);
   const [title, setTitle] = useState("");
@@ -91,6 +97,7 @@ export function EventFormPage() {
   const [productionFeatureIds, setProductionFeatureIds] = useState<string[]>([]);
   const [ticketTypes, setTicketTypes] = useState<EventTicketTypeItem[]>([]);
   const [promoCodes, setPromoCodes] = useState<EventPromoCodeItem[]>([]);
+  const [mediaItems, setMediaItems] = useState<EventMediaItem[]>([]);
   const [lineupArtistId, setLineupArtistId] = useState("");
   const [publishReadiness, setPublishReadiness] = useState<PublishReadiness | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,6 +166,7 @@ export function EventFormPage() {
         setProductionFeatureIds(ev.productionFeatures?.map((f) => f.lookupValueId) ?? []);
         setTicketTypes(ev.ticketTypes ?? []);
         setPromoCodes(ev.promoCodes ?? []);
+        setMediaItems(ev.media ?? []);
         setError(null);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load event"))
@@ -166,11 +174,55 @@ export function EventFormPage() {
   }, [token, isEdit, eventId]);
 
   useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && EVENT_TABS.includes(tabParam as EventTab)) {
+      setActiveTab(tabParam as EventTab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!token || !eventId || activeTab !== "publish") return;
     apiFetch<PublishReadiness>(`/api/events/${eventId}/publish-readiness`, { token })
       .then(setPublishReadiness)
       .catch(() => setPublishReadiness(null));
   }, [token, eventId, activeTab]);
+
+  useEffect(() => {
+    const publishPayment = searchParams.get("publishPayment");
+    const sessionId = searchParams.get("session_id");
+    if (
+      !token ||
+      !eventId ||
+      publishPayment !== "success" ||
+      !sessionId ||
+      publishPaymentConfirmStarted.current
+    ) {
+      return;
+    }
+
+    publishPaymentConfirmStarted.current = true;
+    setIsConfirmingPublishPayment(true);
+    setActiveTab("publish");
+    apiFetch<PublishEventResponse>(
+      `/api/events/${eventId}/confirm-publish-payment?session_id=${encodeURIComponent(sessionId)}`,
+      { method: "POST", token },
+    )
+      .then(() => {
+        setSuccess("Payment confirmed — your event is now live!");
+        return apiFetch<PublishReadiness>(`/api/events/${eventId}/publish-readiness`, { token });
+      })
+      .then(setPublishReadiness)
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "Failed to confirm publish payment"),
+      )
+      .finally(() => {
+        setIsConfirmingPublishPayment(false);
+        const next = new URLSearchParams(searchParams);
+        next.delete("publishPayment");
+        next.delete("session_id");
+        setSearchParams(next, { replace: true });
+      });
+  }, [token, eventId, searchParams, setSearchParams]);
 
   async function handleCreateBasic(e: React.FormEvent) {
     e.preventDefault();
@@ -354,26 +406,25 @@ export function EventFormPage() {
     }
   }
 
-  async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>, mediaType: string) {
-    if (!token || !eventId || !e.target.files?.[0]) return;
-    const formData = new FormData();
-    formData.append("file", e.target.files[0]);
-    formData.append("mediaType", mediaType);
-    try {
-      await apiUpload(`/api/events/${eventId}/media`, formData, token);
-      setSuccess("Media uploaded.");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    }
-  }
-
   async function publishEvent() {
     if (!token || !eventId) return;
     setIsSubmitting(true);
+    setError(null);
     try {
-      await apiFetch(`/api/events/${eventId}/publish`, { method: "POST", token });
+      const result = await apiFetch<PublishEventResponse>(`/api/events/${eventId}/publish`, {
+        method: "POST",
+        token,
+      });
+
+      if (result.requiresPublishPayment && result.checkoutUrl) {
+        window.location.href = result.checkoutUrl;
+        return;
+      }
+
       setSuccess("Event published!");
-      const readiness = await apiFetch<PublishReadiness>(`/api/events/${eventId}/publish-readiness`, { token });
+      const readiness = await apiFetch<PublishReadiness>(`/api/events/${eventId}/publish-readiness`, {
+        token,
+      });
       setPublishReadiness(readiness);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Publish failed");
@@ -381,6 +432,15 @@ export function EventFormPage() {
       setIsSubmitting(false);
     }
   }
+
+  const publishFeeLabel = useMemo(() => {
+    const payment = publishReadiness?.publishPayment;
+    if (!payment?.required || payment.alreadyPaid) return null;
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: payment.currency.toUpperCase(),
+    }).format(payment.amountCents / 100);
+  }, [publishReadiness?.publishPayment]);
 
   function addScheduleDay() {
     setSchedules([
@@ -754,24 +814,18 @@ export function EventFormPage() {
                     title={activeTabConfig.label}
                     description="Visual assets that sell the experience."
                   >
-                    <div className="grid gap-5 sm:grid-cols-3">
-                      {[
-                        { label: "Cover image", type: "Cover", hint: "Square or portrait, used in listings" },
-                        { label: "Banner", type: "Banner", hint: "Wide hero image for the event page" },
-                        { label: "Gallery", type: "Gallery", hint: "Additional photos from past editions" },
-                      ].map((item) => (
-                        <div key={item.type} className="form-item-card space-y-3">
-                          <FormField label={item.label} description={item.hint}>
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              className="cursor-pointer file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary"
-                              onChange={(e) => void handleMediaUpload(e, item.type)}
-                            />
-                          </FormField>
-                        </div>
-                      ))}
-                    </div>
+                    {token && eventId ? (
+                      <EventMediaPanel
+                        eventId={eventId}
+                        token={token}
+                        media={mediaItems}
+                        onMediaChange={setMediaItems}
+                        onError={setError}
+                        onSuccess={setSuccess}
+                      />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Save the event first to upload media.</p>
+                    )}
                   </FormSection>
                 )}
 
@@ -1222,9 +1276,19 @@ export function EventFormPage() {
                         <Button
                           size="lg"
                           onClick={() => void publishEvent()}
-                          disabled={isSubmitting || publishReadiness?.isReady === false}
+                          disabled={
+                            isSubmitting ||
+                            isConfirmingPublishPayment ||
+                            publishReadiness?.isReady === false
+                          }
                         >
-                          {isSubmitting ? "Publishing..." : "Publish event"}
+                          {isConfirmingPublishPayment
+                            ? "Confirming payment..."
+                            : isSubmitting
+                              ? "Processing..."
+                              : publishFeeLabel
+                                ? `Pay ${publishFeeLabel} to publish`
+                                : "Publish event"}
                         </Button>
                       </div>
                     }
@@ -1244,10 +1308,19 @@ export function EventFormPage() {
                           </Badge>
                           <p className="mt-2 text-sm text-muted-foreground">
                             {publishReadiness.isReady
-                              ? "All required fields are complete. You're good to go live."
+                              ? publishReadiness.publishPayment?.required &&
+                                !publishReadiness.publishPayment.alreadyPaid
+                                ? `All required fields are complete. A one-time ${publishFeeLabel ?? "fee"} applies on the Free plan before your event goes live.`
+                                : "All required fields are complete. You're good to go live."
                               : "Complete the items below before publishing."}
                           </p>
                         </div>
+                        {publishReadiness.publishPayment?.required &&
+                          !publishReadiness.publishPayment.alreadyPaid && (
+                            <p className="text-sm text-muted-foreground">
+                              Paid plans (Starter, Pro) publish without this per-event fee.
+                            </p>
+                          )}
                         {publishReadiness.errors.length > 0 && (
                           <ul className="space-y-2">
                             {publishReadiness.errors.map((err) => (

@@ -13,6 +13,9 @@ public sealed class StripeOptions
     public string EventsPublishedMeterId { get; set; } = string.Empty;
     public string EventsPublishedMeterEventName { get; set; } = "events_published";
     public int FreeTierPublishCredits { get; set; } = 1;
+    public int FreeTierPublishFeeAmountCents { get; set; } = 1000;
+    public string FreeTierPublishFeeCurrency { get; set; } = "usd";
+    public string FreeTierPublishFeePriceId { get; set; } = string.Empty;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(SecretKey);
 }

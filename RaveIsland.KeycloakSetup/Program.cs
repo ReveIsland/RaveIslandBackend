@@ -81,6 +81,7 @@ else
 }
 
 await EnsureUserProfileAsync(http, keycloakBase, realm, token, user.Id!, adminUsername);
+await RepairIncompleteUserProfilesAsync(http, keycloakBase, realm, token);
 await EnsurePasswordAsync(http, keycloakBase, realm, token, user.Id!, adminUserPassword);
 await EnsureRealmRoleAsync(http, keycloakBase, realm, token, user.Id!, realmRoleAdmin);
 await EnsureRealmRolesExistAsync(http, keycloakBase, realm, token, "tenant-admin", "tenant-user");
@@ -227,16 +228,104 @@ static async Task EnsureUserProfileAsync(
     string userId,
     string username)
 {
+    var user = await GetUserByIdAsync(http, keycloakBase, realm, token, userId)
+        ?? throw new InvalidOperationException($"Keycloak user '{username}' was not found.");
+
+    user.Enabled = true;
+    user.EmailVerified = true;
+    user.FirstName = string.IsNullOrWhiteSpace(user.FirstName) ? "Admin" : user.FirstName;
+    user.LastName = string.IsNullOrWhiteSpace(user.LastName) ? "User" : user.LastName;
+    user.Email = string.IsNullOrWhiteSpace(user.Email) ? $"{username}@raveisland.local" : user.Email;
+    user.RequiredActions = [];
+
+    await PutUserAsync(http, keycloakBase, realm, token, userId, user);
+}
+
+static async Task RepairIncompleteUserProfilesAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token)
+{
+    using var request = new HttpRequestMessage(
+        HttpMethod.Get,
+        $"{keycloakBase}/admin/realms/{realm}/users?max=1000");
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    var users = await SendAsync<UserRepresentation[]>(http, request) ?? [];
+    foreach (var summary in users.Where(u => !string.IsNullOrWhiteSpace(u.Id)))
+    {
+        var user = await GetUserByIdAsync(http, keycloakBase, realm, token, summary.Id!);
+        if (user is null)
+        {
+            continue;
+        }
+
+        var needsRepair = string.IsNullOrWhiteSpace(user.FirstName) ||
+                          string.IsNullOrWhiteSpace(user.LastName) ||
+                          string.IsNullOrWhiteSpace(user.Email) ||
+                          user.RequiredActions.Length > 0;
+
+        if (!needsRepair)
+        {
+            continue;
+        }
+
+        var email = string.IsNullOrWhiteSpace(user.Email) ? user.Username : user.Email;
+        if (string.IsNullOrWhiteSpace(email) && user.Username?.Contains('@') == true)
+        {
+            email = user.Username;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.Email) && !string.IsNullOrWhiteSpace(email))
+        {
+            user.Email = email;
+            user.EmailVerified = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.FirstName) && !string.IsNullOrWhiteSpace(email))
+        {
+            var localPart = email!.Split('@')[0];
+            user.FirstName = char.ToUpperInvariant(localPart[0]) + localPart[1..];
+        }
+
+        if (string.IsNullOrWhiteSpace(user.LastName))
+        {
+            user.LastName = "User";
+        }
+
+        user.RequiredActions = [];
+        await PutUserAsync(http, keycloakBase, realm, token, summary.Id!, user);
+        Console.WriteLine("Repaired Keycloak profile for user '{0}'.", user.Username ?? summary.Id);
+    }
+}
+
+static async Task<UserRepresentation?> GetUserByIdAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token,
+    string userId)
+{
+    using var request = new HttpRequestMessage(
+        HttpMethod.Get,
+        $"{keycloakBase}/admin/realms/{realm}/users/{userId}");
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+    return await SendAsync<UserRepresentation>(http, request);
+}
+
+static async Task PutUserAsync(
+    HttpClient http,
+    string keycloakBase,
+    string realm,
+    string token,
+    string userId,
+    UserRepresentation user)
+{
     using var request = new HttpRequestMessage(HttpMethod.Put, $"{keycloakBase}/admin/realms/{realm}/users/{userId}")
     {
-        Content = JsonContent.Create(new
-        {
-            enabled = true,
-            emailVerified = true,
-            firstName = "Admin",
-            lastName = "User",
-            email = $"{username}@raveisland.local",
-        }),
+        Content = JsonContent.Create(user),
     };
     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -245,7 +334,7 @@ static async Task EnsureUserProfileAsync(
     {
         var body = await response.Content.ReadAsStringAsync();
         throw new InvalidOperationException(
-            $"Failed to update profile for user '{username}': {(int)response.StatusCode} {body}");
+            $"Failed to update user '{userId}': {(int)response.StatusCode} {body}");
     }
 }
 
@@ -812,6 +901,27 @@ file sealed class UserRepresentation
 
     [JsonPropertyName("username")]
     public string? Username { get; set; }
+
+    [JsonPropertyName("email")]
+    public string? Email { get; set; }
+
+    [JsonPropertyName("firstName")]
+    public string? FirstName { get; set; }
+
+    [JsonPropertyName("lastName")]
+    public string? LastName { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    [JsonPropertyName("emailVerified")]
+    public bool EmailVerified { get; set; }
+
+    [JsonPropertyName("attributes")]
+    public Dictionary<string, string[]>? Attributes { get; set; }
+
+    [JsonPropertyName("requiredActions")]
+    public string[] RequiredActions { get; set; } = [];
 }
 
 file sealed class RoleRepresentation

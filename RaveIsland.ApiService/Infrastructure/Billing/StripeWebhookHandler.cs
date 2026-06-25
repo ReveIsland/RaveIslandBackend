@@ -13,6 +13,7 @@ public interface IStripeWebhookHandler
 public sealed class StripeWebhookHandler(
     AppDbContext db,
     StripeBillingSyncService billingSync,
+    IEventPublishPaymentService eventPublishPaymentService,
     ILogger<StripeWebhookHandler> logger) : IStripeWebhookHandler
 {
     public async Task HandleAsync(Event stripeEvent, CancellationToken cancellationToken = default)
@@ -50,6 +51,15 @@ public sealed class StripeWebhookHandler(
     {
         if (stripeEvent.Data.Object is not Stripe.Checkout.Session session)
         {
+            return;
+        }
+
+        if (string.Equals(
+                session.Metadata?.GetValueOrDefault(BillingCheckoutContracts.CheckoutPurposeMetadataKey),
+                BillingCheckoutContracts.EventPublishPurpose,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            await eventPublishPaymentService.HandleCheckoutCompletedAsync(session, cancellationToken);
             return;
         }
 

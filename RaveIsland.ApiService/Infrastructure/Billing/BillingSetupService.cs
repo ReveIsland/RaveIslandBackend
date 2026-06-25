@@ -25,7 +25,6 @@ public sealed class BillingSetupService(
     AppDbContext db,
     IStripeCustomerService customerService,
     IStripeCheckoutService checkoutService,
-    IStripeMeterService meterService,
     IOptions<StripeOptions> stripeOptions,
     IOptions<AppOptions> appOptions) : IBillingSetupService
 {
@@ -71,8 +70,6 @@ public sealed class BillingSetupService(
         {
             throw new InvalidOperationException("Failed to create Stripe customer.");
         }
-
-        await meterService.GrantFreeTierCreditsAsync(tenant.StripeCustomerId, cancellationToken);
 
         var freePriceId = stripeOptions.Value.FreePriceId;
         if (string.IsNullOrWhiteSpace(freePriceId))
